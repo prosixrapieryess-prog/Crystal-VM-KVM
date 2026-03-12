@@ -980,7 +980,7 @@ while true; do
         print_header
         echo -e "\n  ${B}🔧  IDX Tool Setup${N}\n"
         sep_thin
-        print_status "INFO" "Writing Nix env config → ~/vps123/.idx/dev.nix"
+        print_status "INFO" "Writing Nix env config → ~/Crystal-Code.git/.idx/dev.nix"
         mkdir -p ~/Crystal-Code.git/.idx
         cat > ~/Crystal-Code.git/.idx/dev.nix <<'NIXEOF'
 { pkgs, ... }: {
