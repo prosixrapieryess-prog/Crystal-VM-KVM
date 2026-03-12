@@ -100,159 +100,271 @@ kvm_status_msg() {
 }
  
 # ─── AUTO-INSTALL DEPENDENCIES ───────────────────────────────
-# Detects: apt-get · apt · pkg (Termux) · apk (Alpine) · pacman (Arch)
-#          zypper (openSUSE) · dnf (Fedora/RHEL) · yum (old RHEL)
+# Tries every known package manager in order until one works.
+# Supports: apt-get · apt · pkg (Termux) · apk (Alpine/IDX)
+#           pacman (Arch) · zypper (SUSE) · dnf (Fedora) · yum (CentOS)
+#           nix-env (NixOS/IDX) · brew (macOS/Linux)
 install_deps_if_missing() {
-    # ── command → [apt pkg] [apk pkg] [pacman pkg] [dnf pkg] [pkg/Termux pkg]
-    # Format: "apt_name|apk_name|pacman_name|dnf_name|termux_name"
-    declare -A CMD_MAP=(
-        ["qemu-system-x86_64"]="qemu-system-x86|qemu-system-x86_64|qemu-full|qemu-system-x86|qemu-system-x86_64"
-        ["qemu-img"]="qemu-utils|qemu-img|qemu-img|qemu-img|qemu-utils"
-        ["cloud-localds"]="cloud-image-utils|cloud-utils|cloud-utils|cloud-utils|cloud-utils"
-        ["wget"]="wget|wget|wget|wget|wget"
-        ["lsof"]="lsof|lsof|lsof|lsof|lsof"
-        ["openssl"]="openssl|openssl|openssl|openssl|openssl"
-    )
+ 
+    # ── List of required commands ──────────────────────────────
+    local ALL_CMDS=( qemu-system-x86_64 qemu-img cloud-localds wget lsof openssl )
  
     local missing_cmds=()
-    for cmd in "${!CMD_MAP[@]}"; do
+    for cmd in "${ALL_CMDS[@]}"; do
         command -v "$cmd" &>/dev/null || missing_cmds+=("$cmd")
     done
  
-    [[ ${#missing_cmds[@]} -eq 0 ]] && return 0
+    [[ ${#missing_cmds[@]} -eq 0 ]] && return 0   # nothing to do
  
-    print_status WARN "Missing tools detected: ${missing_cmds[*]}"
+    print_status WARN "Missing: ${missing_cmds[*]}"
     echo
  
-    # ── Detect which package manager is available ──────────────
-    local PM="" UPDATE_CMD="" INSTALL_CMD="" SUDO="sudo"
+    # ── sudo helper (absent in Termux / some containers) ───────
+    local SUDO=""
+    command -v sudo &>/dev/null && SUDO="sudo"
  
-    # In Termux there's no sudo
-    command -v sudo &>/dev/null || SUDO=""
+    # ── Try-each-PM installer ──────────────────────────────────
+    # Returns 0 if the PM ran (even if some packages failed),
+    # so we re-verify afterwards rather than trusting exit codes.
+    _try_install() {
+        local pm="$1"; shift
+        local pkgs=("$@")
  
-    if   command -v apt-get &>/dev/null; then PM="apt-get"
-    elif command -v apt     &>/dev/null; then PM="apt"
-    elif command -v pkg     &>/dev/null && pkg help &>/dev/null 2>&1; then PM="termux-pkg"
-    elif command -v apk     &>/dev/null; then PM="apk"
-    elif command -v pacman  &>/dev/null; then PM="pacman"
-    elif command -v zypper  &>/dev/null; then PM="zypper"
-    elif command -v dnf     &>/dev/null; then PM="dnf"
-    elif command -v yum     &>/dev/null; then PM="yum"
-    else
-        PM="none"
+        # Check the binary really works (not just present)
+        case $pm in
+            apt-get)
+                $SUDO apt-get -qq update 2>/dev/null \
+                && $SUDO apt-get install -y "${pkgs[@]}" 2>&1 \
+                    | grep -E "(Setting up|Unpacking|unable|error)" || true
+                ;;
+            apt)
+                $SUDO apt -qq update 2>/dev/null \
+                && $SUDO apt install -y "${pkgs[@]}" 2>&1 \
+                    | grep -E "(Setting up|Unpacking|unable|error)" || true
+                ;;
+            pkg)    # Termux
+                pkg update -y 2>/dev/null
+                pkg install -y "${pkgs[@]}" 2>&1 | tail -8
+                ;;
+            apk)    # Alpine / some IDX containers
+                $SUDO apk update -q 2>/dev/null
+                $SUDO apk add --no-cache "${pkgs[@]}" 2>&1 | tail -8
+                ;;
+            pacman) # Arch
+                $SUDO pacman -Sy --noconfirm "${pkgs[@]}" 2>&1 | tail -8
+                ;;
+            zypper) # openSUSE
+                $SUDO zypper --non-interactive install "${pkgs[@]}" 2>&1 | tail -8
+                ;;
+            dnf)    # Fedora / RHEL 8+
+                $SUDO dnf install -y "${pkgs[@]}" 2>&1 | tail -8
+                ;;
+            yum)    # CentOS / RHEL 7
+                $SUDO yum install -y "${pkgs[@]}" 2>&1 | tail -8
+                ;;
+            nix-env) # NixOS / IDX
+                nix-env -iA "${pkgs[@]}" 2>&1 | tail -8
+                ;;
+            brew)   # Homebrew
+                brew install "${pkgs[@]}" 2>&1 | tail -8
+                ;;
+        esac
+        return 0
+    }
+ 
+    # ── Package name table ─────────────────────────────────────
+    # Format per PM: apt | termux-pkg | apk | pacman | dnf | nix | brew
+    declare -A PKG_APT=(
+        [qemu-system-x86_64]="qemu-system-x86"
+        [qemu-img]="qemu-utils"
+        [cloud-localds]="cloud-image-utils"
+        [wget]="wget" [lsof]="lsof" [openssl]="openssl"
+    )
+    declare -A PKG_TERMUX=(
+        [qemu-system-x86_64]="qemu-system-x86_64"
+        [qemu-img]="qemu-utils"
+        [cloud-localds]="cloud-utils"
+        [wget]="wget" [lsof]="lsof" [openssl]="openssl"
+    )
+    declare -A PKG_APK=(
+        [qemu-system-x86_64]="qemu-system-x86_64"
+        [qemu-img]="qemu-img"
+        [cloud-localds]="cloud-utils"
+        [wget]="wget" [lsof]="lsof" [openssl]="openssl"
+    )
+    declare -A PKG_PACMAN=(
+        [qemu-system-x86_64]="qemu-full"
+        [qemu-img]="qemu-img"
+        [cloud-localds]="cloud-utils"
+        [wget]="wget" [lsof]="lsof" [openssl]="openssl"
+    )
+    declare -A PKG_DNF=(
+        [qemu-system-x86_64]="qemu-system-x86_64"
+        [qemu-img]="qemu-img"
+        [cloud-localds]="cloud-utils"
+        [wget]="wget" [lsof]="lsof" [openssl]="openssl"
+    )
+    declare -A PKG_NIX=(
+        [qemu-system-x86_64]="nixpkgs.qemu"
+        [qemu-img]="nixpkgs.qemu"
+        [cloud-localds]="nixpkgs.cloud-utils"
+        [wget]="nixpkgs.wget" [lsof]="nixpkgs.lsof" [openssl]="nixpkgs.openssl"
+    )
+    declare -A PKG_BREW=(
+        [qemu-system-x86_64]="qemu"
+        [qemu-img]="qemu"
+        [cloud-localds]="cloud-utils"
+        [wget]="wget" [lsof]="lsof" [openssl]="openssl"
+    )
+ 
+    # ── Build pkg list for a given table ──────────────────────
+    _pkgs_for() {
+        local -n _tbl=$1
+        local out=()
+        for cmd in "${missing_cmds[@]}"; do
+            [[ -n "${_tbl[$cmd]}" ]] && out+=("${_tbl[$cmd]}")
+        done
+        # deduplicate
+        printf '%s\n' "${out[@]}" | sort -u
+    }
+ 
+    # ── Try PMs in priority order ──────────────────────────────
+    local tried=false
+ 
+    # 1. apt-get  (Debian/Ubuntu/IDX standard)
+    if command -v apt-get &>/dev/null; then
+        mapfile -t pkgs < <(_pkgs_for PKG_APT)
+        print_status STEP "Trying apt-get → ${pkgs[*]}"
+        _try_install apt-get "${pkgs[@]}"
+        tried=true
     fi
  
-    print_status INFO "Package manager detected: ${PM:-none}"
+    # re-check after apt-get
+    local still=()
+    for cmd in "${missing_cmds[@]}"; do command -v "$cmd" &>/dev/null || still+=("$cmd"); done
+    [[ ${#still[@]} -eq 0 ]] && { print_status SUCCESS "All dependencies ready!"; sleep 1; return 0; }
+    missing_cmds=("${still[@]}")
+ 
+    # 2. apt  (fallback)
+    if ! $tried && command -v apt &>/dev/null; then
+        mapfile -t pkgs < <(_pkgs_for PKG_APT)
+        print_status STEP "Trying apt → ${pkgs[*]}"
+        _try_install apt "${pkgs[@]}"
+        tried=true
+    fi
+ 
+    # 3. pkg  (Termux)
+    if command -v pkg &>/dev/null && [[ -d "/data/data/com.termux" ]]; then
+        mapfile -t pkgs < <(_pkgs_for PKG_TERMUX)
+        print_status STEP "Trying pkg (Termux) → ${pkgs[*]}"
+        _try_install pkg "${pkgs[@]}"
+        tried=true
+    fi
+ 
+    # 4. apk  (Alpine / minimal containers)
+    if command -v apk &>/dev/null; then
+        mapfile -t pkgs < <(_pkgs_for PKG_APK)
+        print_status STEP "Trying apk → ${pkgs[*]}"
+        _try_install apk "${pkgs[@]}"
+        tried=true
+    fi
+ 
+    # 5. pacman  (Arch)
+    if command -v pacman &>/dev/null; then
+        mapfile -t pkgs < <(_pkgs_for PKG_PACMAN)
+        print_status STEP "Trying pacman → ${pkgs[*]}"
+        _try_install pacman "${pkgs[@]}"
+        tried=true
+    fi
+ 
+    # 6. zypper  (openSUSE)
+    if command -v zypper &>/dev/null; then
+        mapfile -t pkgs < <(_pkgs_for PKG_DNF)
+        print_status STEP "Trying zypper → ${pkgs[*]}"
+        _try_install zypper "${pkgs[@]}"
+        tried=true
+    fi
+ 
+    # 7. dnf  (Fedora / RHEL 8+)
+    if command -v dnf &>/dev/null; then
+        mapfile -t pkgs < <(_pkgs_for PKG_DNF)
+        print_status STEP "Trying dnf → ${pkgs[*]}"
+        _try_install dnf "${pkgs[@]}"
+        tried=true
+    fi
+ 
+    # 8. yum  (CentOS / RHEL 7)
+    if command -v yum &>/dev/null; then
+        mapfile -t pkgs < <(_pkgs_for PKG_DNF)
+        print_status STEP "Trying yum → ${pkgs[*]}"
+        _try_install yum "${pkgs[@]}"
+        tried=true
+    fi
+ 
+    # 9. nix-env  (NixOS / IDX nix shell)
+    if command -v nix-env &>/dev/null; then
+        mapfile -t pkgs < <(_pkgs_for PKG_NIX)
+        print_status STEP "Trying nix-env → ${pkgs[*]}"
+        _try_install nix-env "${pkgs[@]}"
+        tried=true
+    fi
+ 
+    # 10. brew  (macOS / Linux Homebrew)
+    if command -v brew &>/dev/null; then
+        mapfile -t pkgs < <(_pkgs_for PKG_BREW)
+        print_status STEP "Trying brew → ${pkgs[*]}"
+        _try_install brew "${pkgs[@]}"
+        tried=true
+    fi
+ 
     echo
  
-    # ── Build the package list for the detected PM ─────────────
-    local pkgs=()
-    for cmd in "${missing_cmds[@]}"; do
-        local entry="${CMD_MAP[$cmd]}"
-        IFS='|' read -r p_apt p_apk p_pac p_dnf p_termux <<< "$entry"
-        case $PM in
-            apt-get|apt)  pkgs+=("$p_apt")    ;;
-            termux-pkg)   pkgs+=("$p_termux")  ;;
-            apk)          pkgs+=("$p_apk")     ;;
-            pacman)       pkgs+=("$p_pac")     ;;
-            zypper|dnf|yum) pkgs+=("$p_dnf")  ;;
-        esac
+    # ── Final re-verify ────────────────────────────────────────
+    local final_missing=()
+    for cmd in "${ALL_CMDS[@]}"; do
+        command -v "$cmd" &>/dev/null || final_missing+=("$cmd")
     done
  
-    # Deduplicate
-    IFS=$'\n' pkgs=($(printf '%s\n' "${pkgs[@]}" | sort -u)); unset IFS
- 
-    print_status STEP "Installing packages: ${pkgs[*]}"
-    echo
- 
-    local install_ok=false
-    case $PM in
-        apt-get)
-            $SUDO apt-get update -qq 2>/dev/null
-            $SUDO apt-get install -y "${pkgs[@]}" 2>&1 \
-                | grep -E "(Setting up|Unpacking|ERROR|error)" || true
-            install_ok=true
-            ;;
-        apt)
-            $SUDO apt update -qq 2>/dev/null
-            $SUDO apt install -y "${pkgs[@]}" 2>&1 \
-                | grep -E "(Setting up|Unpacking|ERROR|error)" || true
-            install_ok=true
-            ;;
-        termux-pkg)
-            pkg update -y 2>/dev/null
-            pkg install -y "${pkgs[@]}" 2>&1 | tail -10
-            install_ok=true
-            ;;
-        apk)
-            $SUDO apk update 2>/dev/null
-            $SUDO apk add --no-cache "${pkgs[@]}" 2>&1 | tail -10
-            install_ok=true
-            ;;
-        pacman)
-            $SUDO pacman -Sy --noconfirm "${pkgs[@]}" 2>&1 | tail -10
-            install_ok=true
-            ;;
-        zypper)
-            $SUDO zypper --non-interactive install "${pkgs[@]}" 2>&1 | tail -10
-            install_ok=true
-            ;;
-        dnf)
-            $SUDO dnf install -y "${pkgs[@]}" 2>&1 | tail -10
-            install_ok=true
-            ;;
-        yum)
-            $SUDO yum install -y "${pkgs[@]}" 2>&1 | tail -10
-            install_ok=true
-            ;;
-        none)
-            install_ok=false
-            ;;
-    esac
- 
-    echo
- 
-    # ── Re-verify ─────────────────────────────────────────────
-    local still_missing=()
-    for cmd in "${missing_cmds[@]}"; do
-        command -v "$cmd" &>/dev/null || still_missing+=("$cmd")
-    done
- 
-    if [[ ${#still_missing[@]} -eq 0 ]]; then
+    if [[ ${#final_missing[@]} -eq 0 ]]; then
         print_status SUCCESS "All dependencies installed and verified!"
-        log "Dependencies installed via $PM"
+        log "Dependencies installed successfully"
         sleep 1
         return 0
     fi
  
-    # ── Could not install — show targeted manual instructions ──
-    echo
+    # ── Nothing worked — show clean manual guide ───────────────
     divider "═" "$R"
     echo -e "  ${R}${BLD}  MANUAL INSTALL REQUIRED${N}"
     divider "─" "$D"
-    echo -e "  ${W}Still missing:${N} ${R}${still_missing[*]}${N}"
+    echo -e "  ${W}Still missing:${N} ${R}${final_missing[*]}${N}"
     echo
-    echo -e "  ${Y}Pick the command for your system:${N}"
+    echo -e "  ${Y}Run the command for your system:${N}"
     echo
-    echo -e "  ${C}Debian/Ubuntu/IDX:${N}"
-    echo -e "    sudo apt-get update && sudo apt-get install -y \\"
-    echo -e "      qemu-system-x86 qemu-utils cloud-image-utils wget lsof openssl"
+    echo -e "  ${C}${BLD}Debian / Ubuntu / IDX / Cloud Shell:${N}"
+    echo -e "  ${W}  sudo apt-get update && sudo apt-get install -y \\"
+    echo -e "        qemu-system-x86 qemu-utils cloud-image-utils wget lsof openssl${N}"
     echo
-    echo -e "  ${C}Termux (Android):${N}"
-    echo -e "    pkg update && pkg install -y qemu-system-x86_64 qemu-utils wget lsof openssl"
+    echo -e "  ${C}${BLD}Termux (Android):${N}"
+    echo -e "  ${W}  pkg update && pkg install -y qemu-system-x86_64 qemu-utils wget lsof openssl${N}"
     echo
-    echo -e "  ${C}Alpine Linux:${N}"
-    echo -e "    apk add qemu-system-x86_64 qemu-img cloud-utils wget lsof openssl"
+    echo -e "  ${C}${BLD}Alpine Linux:${N}"
+    echo -e "  ${W}  apk add qemu-system-x86_64 qemu-img cloud-utils wget lsof openssl${N}"
     echo
-    echo -e "  ${C}Arch Linux:${N}"
-    echo -e "    sudo pacman -Sy qemu-full wget lsof openssl"
+    echo -e "  ${C}${BLD}Arch Linux:${N}"
+    echo -e "  ${W}  sudo pacman -Sy qemu-full cloud-utils wget lsof openssl${N}"
     echo
-    echo -e "  ${C}Fedora / RHEL / CentOS:${N}"
-    echo -e "    sudo dnf install -y qemu-system-x86_64 qemu-img cloud-utils wget lsof openssl"
+    echo -e "  ${C}${BLD}Fedora / RHEL / CentOS:${N}"
+    echo -e "  ${W}  sudo dnf install -y qemu-system-x86_64 qemu-img cloud-utils wget lsof openssl${N}"
+    echo
+    echo -e "  ${C}${BLD}NixOS / IDX (nix-shell):${N}"
+    echo -e "  ${W}  nix-shell -p qemu cloud-utils wget lsof openssl${N}"
+    echo
+    echo -e "  ${C}${BLD}macOS (Homebrew):${N}"
+    echo -e "  ${W}  brew install qemu cloud-utils wget lsof openssl${N}"
     echo
     divider "═" "$R"
     echo
-    print_status INPUT "Press Enter to exit and install manually..."; read -r
+    print_status INPUT "Press Enter to exit, then run the command above..."; read -r
     exit 1
 }
  
@@ -932,29 +1044,136 @@ launch_github_vps() {
 # ─── IDX TOOL SETUP (OPTION 2) ──────────────────────────────
 setup_idx_tool() {
     print_header
-    echo -e "  ${C}${BLD}🔧  IDX TOOL SETUP${N}"
+    echo -e "  ${C}${BLD}🔧  IDX DEV.NIX SETUP${N}"
     divider "─" "$D"
     echo
-    local dir="$HOME/vps123/.idx"
-    mkdir -p "$dir"
-    cat > "$dir/dev.nix" <<'EOF'
+ 
+    # ── Auto-detect project root ───────────────────────────────
+    # Walk up from $PWD looking for .idx folder or use script location
+    local project_root=""
+    local search="$PWD"
+    for _ in 1 2 3 4 5; do
+        if [[ -d "$search/.idx" ]]; then
+            project_root="$search"
+            break
+        fi
+        search="$(dirname "$search")"
+    done
+ 
+    # If not found, offer common IDX locations
+    if [[ -z "$project_root" ]]; then
+        echo -e "  ${Y}Could not auto-detect your IDX project folder.${N}"
+        echo -e "  ${W}Common locations:${N}"
+        echo -e "   ${C}1)${N}  $HOME  (home directory)"
+        echo -e "   ${C}2)${N}  $PWD   (current directory)"
+        echo -e "   ${C}3)${N}  Enter custom path"
+        echo
+        print_status INPUT "Choice [1-3]: "; read -r loc_choice
+        case $loc_choice in
+            1) project_root="$HOME" ;;
+            2) project_root="$PWD" ;;
+            3) print_status INPUT "Enter full path: "; read -r project_root ;;
+            *) project_root="$PWD" ;;
+        esac
+    else
+        echo -e "  ${G}${BLD}IDX project detected at:${N} ${C}$project_root${N}"
+    fi
+ 
+    local idx_dir="$project_root/.idx"
+    local nix_file="$idx_dir/dev.nix"
+    mkdir -p "$idx_dir"
+ 
+    # ── Backup existing dev.nix if present ────────────────────
+    if [[ -f "$nix_file" ]]; then
+        local backup="$nix_file.bak.$(date +%s)"
+        cp "$nix_file" "$backup"
+        print_status WARN "Existing dev.nix backed up → $backup"
+    fi
+ 
+    echo
+    print_status STEP "Writing dev.nix with all VM packages..."
+    echo
+ 
+    # ── Write the full dev.nix ─────────────────────────────────
+    cat > "$nix_file" <<'DEVNIX'
+# ============================================================
+#  PROXLEGENDYT — IDX dev.nix
+#  Provides: QEMU + KVM tools + cloud-init + helpers
+#  After saving this file, click "Rebuild Environment" in IDX.
+# ============================================================
 { pkgs, ... }: {
+ 
   channel = "stable-24.05";
+ 
   packages = with pkgs; [
-    unzip git qemu_kvm sudo cloud-image-utils wget lsof openssl
+    # ── VM core ──────────────────────────────────────────────
+    qemu_kvm          # QEMU with KVM support  (qemu-system-x86_64)
+    qemu-utils        # qemu-img, qemu-nbd, etc.
+ 
+    # ── Cloud-init seed image builder ────────────────────────
+    cloud-utils       # provides cloud-localds
+ 
+    # ── Networking & utilities ───────────────────────────────
+    wget              # download OS images
+    curl              # HTTP client
+    lsof              # check open files / locked images
+    openssl           # password hashing for cloud-init
+    iproute2          # ss, ip commands
+    procps            # ps, pgrep, pkill
+ 
+    # ── Shell helpers ────────────────────────────────────────
+    unzip
+    git
+    sudo
+    bash
+    coreutils
   ];
-  env = {};
+ 
+  # ── Environment variables ──────────────────────────────────
+  env = {
+    VM_DIR = "/home/user/vms";
+  };
+ 
+  # ── IDX workspace config ──────────────────────────────────
   idx = {
     extensions = [];
+ 
     workspace = {
-      onCreate = {};
-      onStart = {};
+      # Runs once when workspace is first created
+      onCreate = {
+        setup-vms = "mkdir -p /home/user/vms && chmod +x mainmenu 2>/dev/null || true";
+      };
+ 
+      # Runs every time workspace starts
+      onStart = {
+        check-kvm = ''
+          if [ -e /dev/kvm ]; then
+            echo "✅ KVM is available — full speed VM!"
+          else
+            echo "⚠️  KVM not found — will use software emulation (TCG)"
+          fi
+        '';
+      };
     };
   };
 }
-EOF
-    print_status SUCCESS "IDX dev.nix created at $dir/dev.nix"
-    cat "$dir/dev.nix"
+DEVNIX
+ 
+    # ── Show result ───────────────────────────────────────────
+    echo -e "${C}"
+    cat "$nix_file"
+    echo -e "${N}"
+    divider "═" "$G"
+    echo -e "  ${G}${BLD}✅  dev.nix written to:${N} ${C}$nix_file${N}"
+    echo
+    echo -e "  ${Y}${BLD}NEXT STEPS:${N}"
+    echo -e "   ${W}1.${N} In IDX, press ${C}Ctrl+Shift+P${N}"
+    echo -e "   ${W}2.${N} Type: ${C}Firebase Studio: Rebuild Environment${N}"
+    echo -e "   ${W}3.${N} Wait for rebuild (~1-2 min)"
+    echo -e "   ${W}4.${N} Re-run this script — all packages will be ready!"
+    echo
+    echo -e "  ${D}Or click the IDX notification banner: \"Rebuild Environment\"${N}"
+    divider "═" "$G"
     echo
     print_status INPUT "Press Enter to return..."; read -r
 }
