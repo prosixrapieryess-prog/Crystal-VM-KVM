@@ -1,412 +1,216 @@
 #!/bin/bash
-# ============================================================
-# PROXLEGENDYT - Advanced VM Manager
-# Fully optimized | KVM-Aware | Auto-Dependency Installer
-# ============================================================
+# ╔══════════════════════════════════════════════════════════════╗
+# ║         PROXLEGENDYT — VM / KVM Manager                     ║
+# ║         Version 4.0  |  Google IDX + KVM Ready             ║
+# ╚══════════════════════════════════════════════════════════════╝
 export LANG=en_US.UTF-8
-export TERM=xterm-256color
+export TERM="${TERM:-xterm-256color}"
  
-# ─── COLORS ─────────────────────────────────────────────────
-R="\e[1;31m"   # Red
-G="\e[1;32m"   # Green
-Y="\e[1;33m"   # Yellow
-B="\e[1;34m"   # Blue
-M="\e[1;35m"   # Magenta
-C="\e[1;36m"   # Cyan
-W="\e[1;37m"   # White
-D="\e[2;37m"   # Dim White
-N="\e[0m"      # Reset
+# ══════════════════════════════════════════════════════
+#  COLORS & STYLES
+# ══════════════════════════════════════════════════════
+R="\e[1;31m"    # Bold Red
+G="\e[1;32m"    # Bold Green
+Y="\e[1;33m"    # Bold Yellow
+B="\e[1;34m"    # Bold Blue
+M="\e[1;35m"    # Bold Magenta
+C="\e[1;36m"    # Bold Cyan
+W="\e[1;37m"    # Bold White
+DIM="\e[2;37m"  # Dim White
+N="\e[0m"       # Reset
+BLD="\e[1m"     # Bold
  
-BG_B="\e[44m"  # Blue background
-BG_R="\e[41m"  # Red background
-BLD="\e[1m"    # Bold
-UL="\e[4m"     # Underline
- 
-# ─── GLOBAL PATHS ────────────────────────────────────────────
+# ══════════════════════════════════════════════════════
+#  GLOBAL CONFIG
+# ══════════════════════════════════════════════════════
 VM_DIR="${VM_DIR:-$HOME/vms}"
-LOG_FILE="$VM_DIR/manager.log"
+LOG_FILE="$VM_DIR/proxlegendyt.log"
+VERSION="4.0"
  
-# ─── LOGGING ─────────────────────────────────────────────────
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE" 2>/dev/null; }
+# ══════════════════════════════════════════════════════
+#  LOGGING
+# ══════════════════════════════════════════════════════
+log() { mkdir -p "$VM_DIR"; echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE" 2>/dev/null; }
  
-# ─── STATUS PRINTER ──────────────────────────────────────────
-print_status() {
-    local type=$1; shift
-    local msg="$*"
-    case $type in
-        INFO)    echo -e " ${C}${BLD}[  INFO  ]${N}  $msg" ;;
-        WARN)    echo -e " ${Y}${BLD}[  WARN  ]${N}  $msg" ;;
-        ERROR)   echo -e " ${R}${BLD}[ ERROR  ]${N}  $msg" ;;
-        SUCCESS) echo -e " ${G}${BLD}[   OK   ]${N}  $msg" ;;
-        INPUT)   echo -ne " ${M}${BLD}[  INPUT ]${N}  $msg" ;;
-        KVM)     echo -e " ${G}${BLD}[  KVM   ]${N}  $msg" ;;
-        STEP)    echo -e " ${B}${BLD}[ STEP   ]${N}  $msg" ;;
-    esac
-    log "[$type] $msg"
+# ══════════════════════════════════════════════════════
+#  PRINT HELPERS
+# ══════════════════════════════════════════════════════
+_line() {
+    local char="${1:-─}" color="${2:-$DIM}" len=66
+    echo -e "${color}$(printf "%${len}s" | tr ' ' "$char")${N}"
 }
+msg()     { echo -e " ${C}${BLD}[  INFO  ]${N}  $*"; log "[INFO] $*"; }
+warn()    { echo -e " ${Y}${BLD}[  WARN  ]${N}  $*"; log "[WARN] $*"; }
+err()     { echo -e " ${R}${BLD}[ ERROR  ]${N}  $*"; log "[ERROR] $*"; }
+ok()      { echo -e " ${G}${BLD}[   OK   ]${N}  $*"; log "[OK] $*"; }
+step()    { echo -e " ${B}${BLD}[ STEP   ]${N}  $*"; log "[STEP] $*"; }
+kvm_msg() { echo -e " ${G}${BLD}[  KVM   ]${N}  $*"; log "[KVM] $*"; }
+ask()     { echo -ne " ${M}${BLD}[ INPUT  ]${N}  $*"; }
  
-# ─── DRAW A DIVIDER ──────────────────────────────────────────
-divider() {
-    local char="${1:-─}"
-    local color="${2:-$D}"
-    local width=62
-    echo -e "${color}$(printf '%.0s'"$char" $(seq 1 $width))${N}"
-}
- 
-# ─── LOGO ────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════
+#  LOGO
+# ══════════════════════════════════════════════════════
 print_logo() {
     echo
-    divider "═" "$C"
+    _line "=" "$C"
     echo -e "${C}${BLD}"
     echo '  ██████╗ ██████╗  ██████╗ ██╗  ██╗██╗     ███████╗ ██████╗ ███████╗███╗  ██╗██████╗ ██╗   ██╗████████╗'
     echo '  ██╔══██╗██╔══██╗██╔═══██╗╚██╗██╔╝██║     ██╔════╝██╔════╝ ██╔════╝████╗ ██║██╔══██╗╚██╗ ██╔╝╚══██╔══╝'
     echo '  ██████╔╝██████╔╝██║   ██║ ╚███╔╝ ██║     █████╗  ██║  ███╗█████╗  ██╔██╗██║██║  ██║ ╚████╔╝    ██║   '
     echo '  ██╔═══╝ ██╔══██╗██║   ██║ ██╔██╗ ██║     ██╔══╝  ██║   ██║██╔══╝  ██║╚████║██║  ██║  ╚██╔╝     ██║   '
     echo '  ██║     ██║  ██║╚██████╔╝██╔╝ ██╗███████╗███████╗╚██████╔╝███████╗██║ ╚███║██████╔╝   ██║      ██║   '
-    echo '  ╚═╝     ╚═╝  ╚═╝ ╚═════╝╚═╝   ╚═╝╚══════╝╚══════╝ ╚═════╝ ╚══════╝╚═╝  ╚══╝╚═════╝    ╚═╝      ╚═╝  '
+    echo '  ╚═╝     ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝ ╚══════╝╚═╝  ╚══╝╚═════╝    ╚═╝      ╚═╝  '
     echo -e "${N}"
-    divider "═" "$C"
-    echo -e "${W}${BLD}                    ADVANCED VM MANAGEMENT CONSOLE${N}"
-    divider "─" "$D"
-    echo
+    _line "=" "$C"
 }
  
-# ─── HEADER ──────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════
+#  HEADER
+# ══════════════════════════════════════════════════════
 print_header() {
     clear
     print_logo
-    # Show KVM status
-    if kvm_available; then
-        echo -e "  ${G}${BLD}⚡ KVM Acceleration:${N} ${G}ENABLED${N}          $(date '+%a %d %b %Y  %H:%M:%S')"
+    local kvm_line
+    if kvm_ok; then
+        kvm_line="${G}${BLD}⚡ KVM : ENABLED${N}"
     else
-        echo -e "  ${Y}${BLD}🐢 KVM Acceleration:${N} ${Y}DISABLED (TCG mode)${N}  $(date '+%a %d %b %Y  %H:%M:%S')"
+        kvm_line="${Y}${BLD}KVM : DISABLED  (TCG software mode)${N}"
     fi
+    echo -e "   $kvm_line   ${DIM}|  v${VERSION}  |  $(date '+%a %d %b %Y  %H:%M')${N}"
     echo
-    divider "─" "$D"
+    _line "-" "$DIM"
     echo
 }
  
-# ─── KVM CHECK ───────────────────────────────────────────────
-kvm_available() {
-    [[ -e /dev/kvm ]] && [[ -r /dev/kvm ]] && [[ -w /dev/kvm ]]
-}
+# ══════════════════════════════════════════════════════
+#  KVM CHECK
+# ══════════════════════════════════════════════════════
+kvm_ok() { [[ -e /dev/kvm && -r /dev/kvm && -w /dev/kvm ]]; }
  
-kvm_status_msg() {
-    if kvm_available; then
-        echo -e "${G}KVM${N}"
-    else
-        echo -e "${Y}TCG (software emulation)${N}"
-    fi
-}
+# ══════════════════════════════════════════════════════
+#  DEPENDENCY AUTO-INSTALLER
+# ══════════════════════════════════════════════════════
+install_deps() {
+    local NEED=( qemu-system-x86_64 qemu-img cloud-localds wget lsof openssl )
+    local missing=()
+    for cmd in "${NEED[@]}"; do command -v "$cmd" &>/dev/null || missing+=("$cmd"); done
+    [[ ${#missing[@]} -eq 0 ]] && return 0
  
-# ─── AUTO-INSTALL DEPENDENCIES ───────────────────────────────
-# Tries every known package manager in order until one works.
-# Supports: apt-get · apt · pkg (Termux) · apk (Alpine/IDX)
-#           pacman (Arch) · zypper (SUSE) · dnf (Fedora) · yum (CentOS)
-#           nix-env (NixOS/IDX) · brew (macOS/Linux)
-install_deps_if_missing() {
- 
-    # ── List of required commands ──────────────────────────────
-    local ALL_CMDS=( qemu-system-x86_64 qemu-img cloud-localds wget lsof openssl )
- 
-    local missing_cmds=()
-    for cmd in "${ALL_CMDS[@]}"; do
-        command -v "$cmd" &>/dev/null || missing_cmds+=("$cmd")
-    done
- 
-    [[ ${#missing_cmds[@]} -eq 0 ]] && return 0   # nothing to do
- 
-    print_status WARN "Missing: ${missing_cmds[*]}"
+    warn "Missing tools: ${missing[*]}"
     echo
  
-    # ── sudo helper (absent in Termux / some containers) ───────
-    local SUDO=""
-    command -v sudo &>/dev/null && SUDO="sudo"
+    local S=""; command -v sudo &>/dev/null && S="sudo"
  
-    # ── Try-each-PM installer ──────────────────────────────────
-    # Returns 0 if the PM ran (even if some packages failed),
-    # so we re-verify afterwards rather than trusting exit codes.
-    _try_install() {
-        local pm="$1"; shift
-        local pkgs=("$@")
+    # Package name tables
+    declare -A APT=( [qemu-system-x86_64]="qemu-system-x86" [qemu-img]="qemu-utils"
+                     [cloud-localds]="cloud-image-utils" [wget]="wget" [lsof]="lsof" [openssl]="openssl" )
+    declare -A APK=( [qemu-system-x86_64]="qemu-system-x86_64" [qemu-img]="qemu-img"
+                     [cloud-localds]="cloud-utils" [wget]="wget" [lsof]="lsof" [openssl]="openssl" )
+    declare -A DNF=( [qemu-system-x86_64]="qemu-system-x86_64" [qemu-img]="qemu-img"
+                     [cloud-localds]="cloud-utils" [wget]="wget" [lsof]="lsof" [openssl]="openssl" )
+    declare -A PAC=( [qemu-system-x86_64]="qemu-full" [qemu-img]="qemu-img"
+                     [cloud-localds]="cloud-utils" [wget]="wget" [lsof]="lsof" [openssl]="openssl" )
+    declare -A NIX=( [qemu-system-x86_64]="nixpkgs.qemu" [qemu-img]="nixpkgs.qemu"
+                     [cloud-localds]="nixpkgs.cloud-utils" [wget]="nixpkgs.wget"
+                     [lsof]="nixpkgs.lsof" [openssl]="nixpkgs.openssl" )
+    declare -A TPKG=( [qemu-system-x86_64]="qemu-system-x86_64" [qemu-img]="qemu-utils"
+                      [cloud-localds]="cloud-utils" [wget]="wget" [lsof]="lsof" [openssl]="openssl" )
  
-        # Check the binary really works (not just present)
-        case $pm in
-            apt-get)
-                $SUDO apt-get -qq update 2>/dev/null \
-                && $SUDO apt-get install -y "${pkgs[@]}" 2>&1 \
-                    | grep -E "(Setting up|Unpacking|unable|error)" || true
-                ;;
-            apt)
-                $SUDO apt -qq update 2>/dev/null \
-                && $SUDO apt install -y "${pkgs[@]}" 2>&1 \
-                    | grep -E "(Setting up|Unpacking|unable|error)" || true
-                ;;
-            pkg)    # Termux
-                pkg update -y 2>/dev/null
-                pkg install -y "${pkgs[@]}" 2>&1 | tail -8
-                ;;
-            apk)    # Alpine / some IDX containers
-                $SUDO apk update -q 2>/dev/null
-                $SUDO apk add --no-cache "${pkgs[@]}" 2>&1 | tail -8
-                ;;
-            pacman) # Arch
-                $SUDO pacman -Sy --noconfirm "${pkgs[@]}" 2>&1 | tail -8
-                ;;
-            zypper) # openSUSE
-                $SUDO zypper --non-interactive install "${pkgs[@]}" 2>&1 | tail -8
-                ;;
-            dnf)    # Fedora / RHEL 8+
-                $SUDO dnf install -y "${pkgs[@]}" 2>&1 | tail -8
-                ;;
-            yum)    # CentOS / RHEL 7
-                $SUDO yum install -y "${pkgs[@]}" 2>&1 | tail -8
-                ;;
-            nix-env) # NixOS / IDX
-                nix-env -iA "${pkgs[@]}" 2>&1 | tail -8
-                ;;
-            brew)   # Homebrew
-                brew install "${pkgs[@]}" 2>&1 | tail -8
-                ;;
-        esac
-        return 0
-    }
- 
-    # ── Package name table ─────────────────────────────────────
-    # Format per PM: apt | termux-pkg | apk | pacman | dnf | nix | brew
-    declare -A PKG_APT=(
-        [qemu-system-x86_64]="qemu-system-x86"
-        [qemu-img]="qemu-utils"
-        [cloud-localds]="cloud-image-utils"
-        [wget]="wget" [lsof]="lsof" [openssl]="openssl"
-    )
-    declare -A PKG_TERMUX=(
-        [qemu-system-x86_64]="qemu-system-x86_64"
-        [qemu-img]="qemu-utils"
-        [cloud-localds]="cloud-utils"
-        [wget]="wget" [lsof]="lsof" [openssl]="openssl"
-    )
-    declare -A PKG_APK=(
-        [qemu-system-x86_64]="qemu-system-x86_64"
-        [qemu-img]="qemu-img"
-        [cloud-localds]="cloud-utils"
-        [wget]="wget" [lsof]="lsof" [openssl]="openssl"
-    )
-    declare -A PKG_PACMAN=(
-        [qemu-system-x86_64]="qemu-full"
-        [qemu-img]="qemu-img"
-        [cloud-localds]="cloud-utils"
-        [wget]="wget" [lsof]="lsof" [openssl]="openssl"
-    )
-    declare -A PKG_DNF=(
-        [qemu-system-x86_64]="qemu-system-x86_64"
-        [qemu-img]="qemu-img"
-        [cloud-localds]="cloud-utils"
-        [wget]="wget" [lsof]="lsof" [openssl]="openssl"
-    )
-    declare -A PKG_NIX=(
-        [qemu-system-x86_64]="nixpkgs.qemu"
-        [qemu-img]="nixpkgs.qemu"
-        [cloud-localds]="nixpkgs.cloud-utils"
-        [wget]="nixpkgs.wget" [lsof]="nixpkgs.lsof" [openssl]="nixpkgs.openssl"
-    )
-    declare -A PKG_BREW=(
-        [qemu-system-x86_64]="qemu"
-        [qemu-img]="qemu"
-        [cloud-localds]="cloud-utils"
-        [wget]="wget" [lsof]="lsof" [openssl]="openssl"
-    )
- 
-    # ── Build pkg list for a given table ──────────────────────
-    _pkgs_for() {
-        local -n _tbl=$1
-        local out=()
-        for cmd in "${missing_cmds[@]}"; do
-            [[ -n "${_tbl[$cmd]}" ]] && out+=("${_tbl[$cmd]}")
-        done
-        # deduplicate
+    _pkgs() {
+        local -n _t=$1; local out=()
+        for c in "${missing[@]}"; do [[ -n "${_t[$c]:-}" ]] && out+=("${_t[$c]}"); done
         printf '%s\n' "${out[@]}" | sort -u
     }
  
-    # ── Try PMs in priority order ──────────────────────────────
-    local tried=false
+    _try() {
+        local pm=$1; shift; local pkgs=("$@")
+        [[ ${#pkgs[@]} -eq 0 ]] && return 1
+        step "[$pm] Installing: ${pkgs[*]}"
+        case $pm in
+            apt-get) $S apt-get -qq update 2>/dev/null; $S apt-get install -y "${pkgs[@]}" 2>&1 | grep -E "(Setting up|error)" || true ;;
+            apt)     $S apt -qq update 2>/dev/null;     $S apt install -y "${pkgs[@]}" 2>&1     | grep -E "(Setting up|error)" || true ;;
+            apk)     $S apk update -q 2>/dev/null;      $S apk add --no-cache "${pkgs[@]}" 2>&1 | tail -5 ;;
+            pacman)  $S pacman -Sy --noconfirm "${pkgs[@]}" 2>&1 | tail -5 ;;
+            zypper)  $S zypper --non-interactive install "${pkgs[@]}" 2>&1 | tail -5 ;;
+            dnf)     $S dnf install -y "${pkgs[@]}" 2>&1 | tail -5 ;;
+            yum)     $S yum install -y "${pkgs[@]}" 2>&1 | tail -5 ;;
+            nix-env) nix-env -iA "${pkgs[@]}" 2>&1 | tail -5 ;;
+            brew)    brew install "${pkgs[@]}" 2>&1 | tail -5 ;;
+            pkg)     pkg update -y 2>/dev/null; pkg install -y "${pkgs[@]}" 2>&1 | tail -5 ;;
+        esac
+        missing=()
+        for cmd in "${NEED[@]}"; do command -v "$cmd" &>/dev/null || missing+=("$cmd"); done
+        [[ ${#missing[@]} -eq 0 ]]
+    }
  
-    # 1. apt-get  (Debian/Ubuntu/IDX standard)
-    if command -v apt-get &>/dev/null; then
-        mapfile -t pkgs < <(_pkgs_for PKG_APT)
-        print_status STEP "Trying apt-get → ${pkgs[*]}"
-        _try_install apt-get "${pkgs[@]}"
-        tried=true
-    fi
- 
-    # re-check after apt-get
-    local still=()
-    for cmd in "${missing_cmds[@]}"; do command -v "$cmd" &>/dev/null || still+=("$cmd"); done
-    [[ ${#still[@]} -eq 0 ]] && { print_status SUCCESS "All dependencies ready!"; sleep 1; return 0; }
-    missing_cmds=("${still[@]}")
- 
-    # 2. apt  (fallback)
-    if ! $tried && command -v apt &>/dev/null; then
-        mapfile -t pkgs < <(_pkgs_for PKG_APT)
-        print_status STEP "Trying apt → ${pkgs[*]}"
-        _try_install apt "${pkgs[@]}"
-        tried=true
-    fi
- 
-    # 3. pkg  (Termux)
-    if command -v pkg &>/dev/null && [[ -d "/data/data/com.termux" ]]; then
-        mapfile -t pkgs < <(_pkgs_for PKG_TERMUX)
-        print_status STEP "Trying pkg (Termux) → ${pkgs[*]}"
-        _try_install pkg "${pkgs[@]}"
-        tried=true
-    fi
- 
-    # 4. apk  (Alpine / minimal containers)
-    if command -v apk &>/dev/null; then
-        mapfile -t pkgs < <(_pkgs_for PKG_APK)
-        print_status STEP "Trying apk → ${pkgs[*]}"
-        _try_install apk "${pkgs[@]}"
-        tried=true
-    fi
- 
-    # 5. pacman  (Arch)
-    if command -v pacman &>/dev/null; then
-        mapfile -t pkgs < <(_pkgs_for PKG_PACMAN)
-        print_status STEP "Trying pacman → ${pkgs[*]}"
-        _try_install pacman "${pkgs[@]}"
-        tried=true
-    fi
- 
-    # 6. zypper  (openSUSE)
-    if command -v zypper &>/dev/null; then
-        mapfile -t pkgs < <(_pkgs_for PKG_DNF)
-        print_status STEP "Trying zypper → ${pkgs[*]}"
-        _try_install zypper "${pkgs[@]}"
-        tried=true
-    fi
- 
-    # 7. dnf  (Fedora / RHEL 8+)
-    if command -v dnf &>/dev/null; then
-        mapfile -t pkgs < <(_pkgs_for PKG_DNF)
-        print_status STEP "Trying dnf → ${pkgs[*]}"
-        _try_install dnf "${pkgs[@]}"
-        tried=true
-    fi
- 
-    # 8. yum  (CentOS / RHEL 7)
-    if command -v yum &>/dev/null; then
-        mapfile -t pkgs < <(_pkgs_for PKG_DNF)
-        print_status STEP "Trying yum → ${pkgs[*]}"
-        _try_install yum "${pkgs[@]}"
-        tried=true
-    fi
- 
-    # 9. nix-env  (NixOS / IDX nix shell)
-    if command -v nix-env &>/dev/null; then
-        mapfile -t pkgs < <(_pkgs_for PKG_NIX)
-        print_status STEP "Trying nix-env → ${pkgs[*]}"
-        _try_install nix-env "${pkgs[@]}"
-        tried=true
-    fi
- 
-    # 10. brew  (macOS / Linux Homebrew)
-    if command -v brew &>/dev/null; then
-        mapfile -t pkgs < <(_pkgs_for PKG_BREW)
-        print_status STEP "Trying brew → ${pkgs[*]}"
-        _try_install brew "${pkgs[@]}"
-        tried=true
-    fi
+    local p=()
+    mapfile -t p < <(_pkgs APT);  command -v apt-get &>/dev/null && _try apt-get "${p[@]}" && { ok "All dependencies ready!"; sleep 1; return 0; }
+    mapfile -t p < <(_pkgs APT);  command -v apt     &>/dev/null && _try apt     "${p[@]}" && { ok "All dependencies ready!"; sleep 1; return 0; }
+    mapfile -t p < <(_pkgs APK);  command -v apk     &>/dev/null && _try apk     "${p[@]}" && { ok "All dependencies ready!"; sleep 1; return 0; }
+    mapfile -t p < <(_pkgs PAC);  command -v pacman  &>/dev/null && _try pacman  "${p[@]}" && { ok "All dependencies ready!"; sleep 1; return 0; }
+    mapfile -t p < <(_pkgs DNF);  command -v zypper  &>/dev/null && _try zypper  "${p[@]}" && { ok "All dependencies ready!"; sleep 1; return 0; }
+    mapfile -t p < <(_pkgs DNF);  command -v dnf     &>/dev/null && _try dnf     "${p[@]}" && { ok "All dependencies ready!"; sleep 1; return 0; }
+    mapfile -t p < <(_pkgs DNF);  command -v yum     &>/dev/null && _try yum     "${p[@]}" && { ok "All dependencies ready!"; sleep 1; return 0; }
+    mapfile -t p < <(_pkgs NIX);  command -v nix-env &>/dev/null && _try nix-env "${p[@]}" && { ok "All dependencies ready!"; sleep 1; return 0; }
+    mapfile -t p < <(_pkgs APT);  command -v brew    &>/dev/null && _try brew    "${p[@]}" && { ok "All dependencies ready!"; sleep 1; return 0; }
+    mapfile -t p < <(_pkgs TPKG); command -v pkg     &>/dev/null && _try pkg     "${p[@]}" && { ok "All dependencies ready!"; sleep 1; return 0; }
  
     echo
- 
-    # ── Final re-verify ────────────────────────────────────────
-    local final_missing=()
-    for cmd in "${ALL_CMDS[@]}"; do
-        command -v "$cmd" &>/dev/null || final_missing+=("$cmd")
-    done
- 
-    if [[ ${#final_missing[@]} -eq 0 ]]; then
-        print_status SUCCESS "All dependencies installed and verified!"
-        log "Dependencies installed successfully"
-        sleep 1
-        return 0
-    fi
- 
-    # ── Nothing worked — show clean manual guide ───────────────
-    divider "═" "$R"
+    _line "=" "$R"
     echo -e "  ${R}${BLD}  MANUAL INSTALL REQUIRED${N}"
-    divider "─" "$D"
-    echo -e "  ${W}Still missing:${N} ${R}${final_missing[*]}${N}"
+    _line "-" "$DIM"
+    echo -e "  ${W}Still missing:${N} ${R}${missing[*]}${N}"
     echo
-    echo -e "  ${Y}Run the command for your system:${N}"
+    echo -e "  ${Y}Run the right command for your system:${N}"
     echo
-    echo -e "  ${C}${BLD}Debian / Ubuntu / IDX / Cloud Shell:${N}"
+    echo -e "  ${C}${BLD}Debian / Ubuntu / IDX:${N}"
     echo -e "  ${W}  sudo apt-get update && sudo apt-get install -y \\"
     echo -e "        qemu-system-x86 qemu-utils cloud-image-utils wget lsof openssl${N}"
     echo
-    echo -e "  ${C}${BLD}Termux (Android):${N}"
-    echo -e "  ${W}  pkg update && pkg install -y qemu-system-x86_64 qemu-utils wget lsof openssl${N}"
+    echo -e "  ${C}${BLD}IDX (use Option 2 first, then Rebuild Environment):${N}"
+    echo -e "  ${W}  Select Option 2 → follow on-screen steps${N}"
     echo
-    echo -e "  ${C}${BLD}Alpine Linux:${N}"
-    echo -e "  ${W}  apk add qemu-system-x86_64 qemu-img cloud-utils wget lsof openssl${N}"
+    echo -e "  ${C}${BLD}Alpine:${N}  ${W}apk add qemu-system-x86_64 qemu-img cloud-utils wget lsof openssl${N}"
+    echo -e "  ${C}${BLD}Arch:${N}    ${W}sudo pacman -Sy qemu-full cloud-utils wget lsof openssl${N}"
+    echo -e "  ${C}${BLD}Fedora:${N}  ${W}sudo dnf install -y qemu-system-x86_64 qemu-img cloud-utils wget lsof openssl${N}"
+    echo -e "  ${C}${BLD}NixOS:${N}   ${W}nix-shell -p qemu cloud-utils wget lsof openssl${N}"
+    echo -e "  ${C}${BLD}Termux:${N}  ${W}pkg install qemu-system-x86_64 qemu-utils wget lsof openssl${N}"
     echo
-    echo -e "  ${C}${BLD}Arch Linux:${N}"
-    echo -e "  ${W}  sudo pacman -Sy qemu-full cloud-utils wget lsof openssl${N}"
+    _line "=" "$R"
     echo
-    echo -e "  ${C}${BLD}Fedora / RHEL / CentOS:${N}"
-    echo -e "  ${W}  sudo dnf install -y qemu-system-x86_64 qemu-img cloud-utils wget lsof openssl${N}"
-    echo
-    echo -e "  ${C}${BLD}NixOS / IDX (nix-shell):${N}"
-    echo -e "  ${W}  nix-shell -p qemu cloud-utils wget lsof openssl${N}"
-    echo
-    echo -e "  ${C}${BLD}macOS (Homebrew):${N}"
-    echo -e "  ${W}  brew install qemu cloud-utils wget lsof openssl${N}"
-    echo
-    divider "═" "$R"
-    echo
-    print_status INPUT "Press Enter to exit, then run the command above..."; read -r
+    ask "Press Enter to exit, then run the command above..."; read -r
     exit 1
 }
  
-# ─── VALIDATE INPUT ──────────────────────────────────────────
-validate_input() {
-    local type=$1 value=$2
+# ══════════════════════════════════════════════════════
+#  INPUT VALIDATION
+# ══════════════════════════════════════════════════════
+valid() {
+    local type=$1 val=$2
     case $type in
-        number) [[ "$value" =~ ^[0-9]+$ ]] || { print_status ERROR "Must be a number."; return 1; } ;;
-        size)   [[ "$value" =~ ^[0-9]+[GgMm]$ ]] || { print_status ERROR "Must include unit (e.g. 20G, 512M)."; return 1; } ;;
-        port)
-            [[ "$value" =~ ^[0-9]+$ ]] && [ "$value" -ge 23 ] && [ "$value" -le 65535 ] \
-                || { print_status ERROR "Port must be between 23 and 65535."; return 1; }
-            ;;
-        name)     [[ "$value" =~ ^[a-zA-Z0-9_-]+$ ]] || { print_status ERROR "Only letters, numbers, hyphens, underscores."; return 1; } ;;
-        username) [[ "$value" =~ ^[a-z_][a-z0-9_-]*$ ]] || { print_status ERROR "Must start with letter/underscore, lowercase."; return 1; } ;;
+        num)  [[ "$val" =~ ^[0-9]+$ ]] || { err "Must be a number."; return 1; } ;;
+        size) [[ "$val" =~ ^[0-9]+[GgMm]$ ]] || { err "Must include unit: e.g. 20G or 512M."; return 1; } ;;
+        port) [[ "$val" =~ ^[0-9]+$ ]] && (( val>=23 && val<=65535 )) || { err "Port must be 23-65535."; return 1; } ;;
+        name) [[ "$val" =~ ^[a-zA-Z0-9_-]+$ ]] || { err "Only letters, numbers, - and _."; return 1; } ;;
+        user) [[ "$val" =~ ^[a-z_][a-z0-9_-]*$ ]] || { err "Start with lowercase letter or underscore."; return 1; } ;;
     esac
     return 0
 }
  
-# ─── VM LIST ─────────────────────────────────────────────────
-get_vm_list() {
-    find "$VM_DIR" -maxdepth 1 -name "*.conf" -exec basename {} .conf \; 2>/dev/null | sort
+# ══════════════════════════════════════════════════════
+#  VM CONFIG  (load / save)
+# ══════════════════════════════════════════════════════
+load_cfg() {
+    local f="$VM_DIR/$1.conf"
+    [[ -f "$f" ]] || { err "Config for '$1' not found."; return 1; }
+    unset VM_NAME OS_TYPE CODENAME IMG_URL HOSTNAME USERNAME PASSWORD \
+          DISK_SIZE MEMORY CPUS SSH_PORT GUI_MODE PORT_FORWARDS IMG_FILE SEED_FILE CREATED
+    source "$f"
 }
  
-# ─── LOAD / SAVE CONFIG ──────────────────────────────────────
-load_vm_config() {
-    local vm_name=$1
-    local cfg="$VM_DIR/$vm_name.conf"
-    if [[ -f "$cfg" ]]; then
-        unset VM_NAME OS_TYPE CODENAME IMG_URL HOSTNAME USERNAME PASSWORD
-        unset DISK_SIZE MEMORY CPUS SSH_PORT GUI_MODE PORT_FORWARDS IMG_FILE SEED_FILE CREATED
-        source "$cfg"
-        return 0
-    fi
-    print_status ERROR "Config for VM '$vm_name' not found."
-    return 1
-}
- 
-save_vm_config() {
+save_cfg() {
     mkdir -p "$VM_DIR"
-    local cfg="$VM_DIR/$VM_NAME.conf"
-    cat > "$cfg" <<EOF
+    cat > "$VM_DIR/$VM_NAME.conf" <<EOF
 VM_NAME="$VM_NAME"
 OS_TYPE="$OS_TYPE"
 CODENAME="$CODENAME"
@@ -424,124 +228,81 @@ IMG_FILE="$IMG_FILE"
 SEED_FILE="$SEED_FILE"
 CREATED="$CREATED"
 EOF
-    print_status SUCCESS "Configuration saved → $cfg"
-    log "Saved config for $VM_NAME"
+    ok "Config saved."
+    log "Saved config: $VM_NAME"
 }
  
-# ─── IMAGE LOCK CHECK ────────────────────────────────────────
-check_image_lock() {
-    local img_file=$1 vm_name=$2
-    if lsof "$img_file" 2>/dev/null | grep -q qemu-system; then
-        local pid
-        pid=$(lsof "$img_file" 2>/dev/null | awk '/qemu-system/{print $2}' | head -1)
-        print_status WARN "Image locked by PID $pid"
-        print_status INPUT "Kill existing process and retry? [y/N]: "
-        read -r ans
+# ══════════════════════════════════════════════════════
+#  VM LIST / RUNNING CHECK
+# ══════════════════════════════════════════════════════
+vm_list()    { find "$VM_DIR" -maxdepth 1 -name "*.conf" -exec basename {} .conf \; 2>/dev/null | sort; }
+vm_running() {
+    pgrep -f "qemu-system.*${1}" &>/dev/null && return 0
+    [[ -n "${IMG_FILE:-}" ]] && pgrep -f "qemu-system.*$(basename "$IMG_FILE")" &>/dev/null
+}
+ 
+# ══════════════════════════════════════════════════════
+#  IMAGE LOCK CHECK
+# ══════════════════════════════════════════════════════
+img_locked() {
+    local img=$1
+    if lsof "$img" 2>/dev/null | grep -q qemu-system; then
+        local pid; pid=$(lsof "$img" 2>/dev/null | awk '/qemu-system/{print $2}' | head -1)
+        warn "Image locked by PID $pid."
+        ask "Force-kill and continue? [y/N]: "; read -r ans
         if [[ "$ans" =~ ^[Yy]$ ]]; then
             kill "$pid" 2>/dev/null; sleep 2
             kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
-            return 0
-        fi
-        return 1
-    fi
-    local lock="${img_file}.lock"
-    if [[ -f "$lock" ]]; then
-        if find "$lock" -mmin +5 &>/dev/null; then
-            print_status WARN "Stale lock file found. Removing..."
-            rm -f "$lock"
-        else
-            print_status ERROR "Image is locked: $lock"
             return 1
         fi
+        return 0
     fi
-    return 0
+    local lock="${img}.lock"
+    if [[ -f "$lock" ]]; then
+        if find "$lock" -mmin +5 &>/dev/null; then
+            warn "Stale lock file. Removing..."; rm -f "$lock"; return 1
+        fi
+        err "Lock file exists: $lock"; return 0
+    fi
+    return 1
 }
  
-# ─── IS VM RUNNING ───────────────────────────────────────────
-is_vm_running() {
-    local vm_name=$1
-    pgrep -f "qemu-system.*$vm_name" &>/dev/null && return 0
-    load_vm_config "$vm_name" &>/dev/null
-    [[ -n "$IMG_FILE" ]] && pgrep -f "qemu-system.*$(basename "$IMG_FILE")" &>/dev/null
-}
- 
-# ─── CLEANUP ─────────────────────────────────────────────────
-cleanup() {
-    rm -f user-data meta-data 2>/dev/null
-}
-trap cleanup EXIT
- 
-# ─── SPINNER ─────────────────────────────────────────────────
-spinner_start() {
-    local msg="${1:-Working...}"
-    (
-        local chars='⣾⣽⣻⢿⡿⣟⣯⣷'
-        while true; do
-            for ((i=0;i<${#chars};i++)); do
-                printf "\r ${C}${chars:$i:1}${N}  %s   " "$msg"
-                sleep 0.08
-            done
-        done
-    ) &
-    SPINNER_PID=$!
-    disown "$SPINNER_PID"
-}
- 
-spinner_stop() {
-    kill "$SPINNER_PID" 2>/dev/null
-    printf "\r%60s\r" ""
-}
- 
-# ─── PROGRESS BAR ────────────────────────────────────────────
-progress_bar() {
-    local current=$1 total=$2 label="${3:-Progress}"
-    local width=40
-    local filled=$(( current * width / total ))
-    local empty=$(( width - filled ))
-    printf "\r  ${C}%-12s${N} [${G}%s${D}%s${N}] ${W}%d%%${N}" \
-        "$label" \
-        "$(printf '█%.0s' $(seq 1 $filled))" \
-        "$(printf '░%.0s' $(seq 1 $empty))" \
-        $(( current * 100 / total ))
-}
- 
-# ─── SETUP VM IMAGE ──────────────────────────────────────────
-setup_vm_image() {
-    print_status STEP "Preparing VM image for '$VM_NAME'..."
+# ══════════════════════════════════════════════════════
+#  SETUP VM IMAGE
+# ══════════════════════════════════════════════════════
+setup_image() {
     mkdir -p "$VM_DIR"
+    step "Preparing image for '$VM_NAME'..."
  
     if [[ ! -f "$IMG_FILE" ]]; then
-        print_status INFO "Downloading OS image..."
-        print_status INFO "URL: $IMG_URL"
+        step "Downloading: $IMG_URL"
         echo
         if ! wget --progress=bar:force:noscroll "$IMG_URL" -O "${IMG_FILE}.tmp" 2>&1; then
             rm -f "${IMG_FILE}.tmp"
-            print_status ERROR "Download failed. Check URL or network."
+            err "Download failed. Check URL or network."
             return 1
         fi
         mv "${IMG_FILE}.tmp" "$IMG_FILE"
-        print_status SUCCESS "Image downloaded successfully."
+        ok "Image downloaded."
     else
-        print_status INFO "Existing image found, skipping download."
+        msg "Existing image found — skipping download."
     fi
  
-    # Resize disk
-    print_status STEP "Resizing disk to $DISK_SIZE..."
+    step "Resizing disk to $DISK_SIZE..."
     if ! qemu-img resize "$IMG_FILE" "$DISK_SIZE" &>/dev/null; then
-        print_status WARN "Inline resize failed. Creating backed image..."
+        warn "Inline resize failed — creating backed image."
         local tmp="${IMG_FILE}.new"
         qemu-img create -f qcow2 -F qcow2 -b "$IMG_FILE" "$tmp" "$DISK_SIZE" &>/dev/null \
             || qemu-img create -f qcow2 "$tmp" "$DISK_SIZE" &>/dev/null
         [[ -f "$tmp" ]] && mv "$tmp" "$IMG_FILE"
     fi
-    print_status SUCCESS "Disk sized to $DISK_SIZE."
+    ok "Disk set to $DISK_SIZE."
  
-    # cloud-init
-    print_status STEP "Writing cloud-init configuration..."
-    local hashed_pw
-    hashed_pw=$(openssl passwd -6 "$PASSWORD" 2>/dev/null || echo "$PASSWORD")
+    step "Building cloud-init seed..."
+    local hpw
+    hpw=$(openssl passwd -6 "$PASSWORD" 2>/dev/null) || hpw="$PASSWORD"
  
-    cat > user-data <<EOF
+    cat > /tmp/plyt-user-data <<EOF
 #cloud-config
 hostname: $HOSTNAME
 manage_etc_hosts: true
@@ -553,605 +314,458 @@ users:
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
     lock_passwd: false
-    passwd: $hashed_pw
-  - name: root
-    lock_passwd: false
-    passwd: $hashed_pw
+    passwd: $hpw
 chpasswd:
   list: |
     root:$PASSWORD
     $USERNAME:$PASSWORD
   expire: false
-package_update: false
 runcmd:
-  - sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-  - sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+  - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+  - sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
   - systemctl restart sshd 2>/dev/null || service ssh restart 2>/dev/null || true
 EOF
  
-    cat > meta-data <<EOF
+    cat > /tmp/plyt-meta-data <<EOF
 instance-id: iid-${VM_NAME}-$(date +%s)
 local-hostname: $HOSTNAME
 EOF
  
-    if ! cloud-localds "$SEED_FILE" user-data meta-data 2>/dev/null; then
-        print_status ERROR "Failed to create seed ISO. Is cloud-image-utils installed?"
+    if ! cloud-localds "$SEED_FILE" /tmp/plyt-user-data /tmp/plyt-meta-data 2>/dev/null; then
+        err "cloud-localds failed. Is cloud-image-utils installed?"
         return 1
     fi
+    rm -f /tmp/plyt-user-data /tmp/plyt-meta-data
  
-    print_status SUCCESS "cloud-init seed image created."
     echo
-    divider "─" "$G"
-    echo -e "  ${G}${BLD}VM Created Successfully!${N}"
-    echo -e "  ${W}SSH :${N}  ssh -p ${C}$SSH_PORT${N} ${C}$USERNAME${N}@localhost"
+    _line "-" "$G"
+    echo -e "  ${G}${BLD}VM Ready!${N}"
+    echo -e "  ${W}SSH :${N}  ${C}ssh -p $SSH_PORT $USERNAME@localhost${N}"
     echo -e "  ${W}Pass:${N}  ${C}$PASSWORD${N}"
-    divider "─" "$G"
+    _line "-" "$G"
     echo
 }
  
-# ─── CREATE NEW VM ───────────────────────────────────────────
-create_new_vm() {
-    print_header
-    echo -e "  ${C}${BLD}➕  CREATE NEW VIRTUAL MACHINE${N}"
-    divider "─" "$D"
-    echo
+# ══════════════════════════════════════════════════════
+#  BUILD QEMU COMMAND
+# ══════════════════════════════════════════════════════
+build_qemu() {
+    if kvm_ok; then
+        kvm_msg "KVM acceleration ENABLED — native speed!"
+        QEMU_CMD=( qemu-system-x86_64 -enable-kvm -cpu host )
+    else
+        warn "KVM unavailable — software emulation (TCG)."
+        QEMU_CMD=( qemu-system-x86_64 -machine type=pc,accel=tcg -cpu qemu64 )
+    fi
  
-    # OS Selection
-    local os_names=()
-    local i=1
-    for os in "${!OS_OPTIONS[@]}"; do
-        os_names+=("$os")
+    QEMU_CMD+=(
+        -m "$MEMORY"
+        -smp "$CPUS"
+        -drive "file=$IMG_FILE,format=qcow2,if=virtio,cache=writeback"
+        -drive "file=$SEED_FILE,format=raw,if=virtio"
+        -boot order=c,strict=on
+        -device "virtio-net-pci,netdev=net0,mac=52:54:00:$(printf '%02x:%02x:%02x' $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)))"
+        -netdev "user,id=net0,hostfwd=tcp::${SSH_PORT}-:22"
+        -device virtio-balloon-pci
+        -object "rng-random,filename=/dev/urandom,id=rng0"
+        -device virtio-rng-pci,rng=rng0
+        -rtc base=utc,clock=host
+        -no-hpet
+        -name "$VM_NAME"
+    )
+ 
+    if [[ -n "${PORT_FORWARDS:-}" ]]; then
+        local fstr="user,id=fwd0"
+        IFS=',' read -ra fwds <<< "$PORT_FORWARDS"
+        for fw in "${fwds[@]}"; do
+            IFS=':' read -r hp gp <<< "$fw"
+            fstr+=",hostfwd=tcp::${hp}-:${gp}"
+        done
+        QEMU_CMD+=( -netdev "$fstr" -device virtio-net-pci,netdev=fwd0 )
+    fi
+ 
+    if [[ "${GUI_MODE:-false}" == true ]]; then
+        QEMU_CMD+=( -vga virtio -display gtk )
+    else
+        QEMU_CMD+=( -nographic -serial mon:stdio )
+    fi
+}
+ 
+# ══════════════════════════════════════════════════════
+#  PROMPT HELPERS
+# ══════════════════════════════════════════════════════
+prompt() {
+    local _var=$1 _label=$2 _def=$3 _type=$4 _val
+    while true; do
+        ask "$_label${_def:+ [default: $_def]}: "; read -r _val
+        _val="${_val:-$_def}"
+        if [[ -n "$_type" ]]; then valid "$_type" "$_val" && break
+        else [[ -n "$_val" ]] && break || err "Value cannot be empty."; fi
     done
-    # Sort for consistent display
-    IFS=$'\n' os_names=($(sort <<<"${os_names[*]}")); unset IFS
+    printf -v "$_var" '%s' "$_val"
+}
  
-    echo -e "  ${Y}${BLD}Select Operating System:${N}"
+prompt_secret() {
+    local _var=$1 _label=$2 _def=$3 _val
+    while true; do
+        ask "$_label${_def:+ [default: $_def]}: "; read -rs _val; echo
+        _val="${_val:-$_def}"
+        [[ -n "$_val" ]] && break || err "Password cannot be empty."
+    done
+    printf -v "$_var" '%s' "$_val"
+}
+ 
+# ══════════════════════════════════════════════════════
+#  VM SELECTOR
+# ══════════════════════════════════════════════════════
+select_vm() {
+    local prompt_txt=$1; shift
+    local vms=("$@") count=${#vms[@]}
     echo
+    for i in "${!vms[@]}"; do
+        load_cfg "${vms[$i]}" &>/dev/null
+        local st="${DIM}stopped${N}"; vm_running "${vms[$i]}" && st="${G}RUNNING${N}"
+        printf "    ${C}%2d)${N}  %-24s  %b\n" $((i+1)) "${vms[$i]}" "$st"
+    done
+    echo
+    local sel
+    while true; do
+        ask "$prompt_txt [1-$count]: "; read -r sel
+        [[ "$sel" =~ ^[0-9]+$ ]] && (( sel>=1 && sel<=count )) && break
+        err "Enter a number between 1 and $count."
+    done
+    SELECTED_VM="${vms[$((sel-1))]}"
+}
+ 
+# ══════════════════════════════════════════════════════
+#  CREATE NEW VM
+# ══════════════════════════════════════════════════════
+create_vm() {
+    print_header
+    echo -e "  ${C}${BLD}  CREATE A NEW VIRTUAL MACHINE${N}"; echo
+    _line "-" "$DIM"; echo
+ 
+    local os_names=()
+    mapfile -t os_names < <(printf '%s\n' "${!OS_LIST[@]}" | sort)
+ 
+    echo -e "  ${Y}${BLD}Select Operating System:${N}"; echo
     for i in "${!os_names[@]}"; do
         printf "    ${C}%2d)${N}  %s\n" $((i+1)) "${os_names[$i]}"
     done
     echo
  
-    local choice os
+    local choice
     while true; do
-        print_status INPUT "Your choice [1-${#os_names[@]}]: "; read -r choice
-        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#os_names[@]} )); then
-            os="${os_names[$((choice-1))]}"
-            IFS='|' read -r OS_TYPE CODENAME IMG_URL DEFAULT_HOSTNAME DEFAULT_USERNAME DEFAULT_PASSWORD <<< "${OS_OPTIONS[$os]}"
-            print_status SUCCESS "Selected: $os"
-            break
+        ask "Your choice [1-${#os_names[@]}]: "; read -r choice
+        [[ "$choice" =~ ^[0-9]+$ ]] && (( choice>=1 && choice<=${#os_names[@]} )) && break
+        err "Invalid. Try again."
+    done
+ 
+    local os="${os_names[$((choice-1))]}"
+    IFS='|' read -r OS_TYPE CODENAME IMG_URL DEF_HOST DEF_USER DEF_PASS <<< "${OS_LIST[$os]}"
+    ok "Selected: $os"; echo
+ 
+    local tmp_name
+    while true; do
+        prompt tmp_name "VM Name" "$DEF_HOST" name
+        if [[ -f "$VM_DIR/$tmp_name.conf" ]]; then
+            err "VM '$tmp_name' already exists."
+        else
+            VM_NAME="$tmp_name"; break
         fi
-        print_status ERROR "Invalid. Try again."
-    done
-    echo
- 
-    # VM Name
-    while true; do
-        print_status INPUT "VM Name [default: $DEFAULT_HOSTNAME]: "; read -r VM_NAME
-        VM_NAME="${VM_NAME:-$DEFAULT_HOSTNAME}"
-        validate_input name "$VM_NAME" || continue
-        [[ -f "$VM_DIR/$VM_NAME.conf" ]] && { print_status ERROR "VM '$VM_NAME' already exists."; continue; }
-        break
     done
  
-    # Hostname
-    while true; do
-        print_status INPUT "Hostname [default: $VM_NAME]: "; read -r HOSTNAME
-        HOSTNAME="${HOSTNAME:-$VM_NAME}"
-        validate_input name "$HOSTNAME" && break
-    done
+    prompt HOSTNAME   "Hostname"      "$VM_NAME"  name
+    prompt USERNAME   "Username"      "$DEF_USER" user
+    prompt_secret PASSWORD "Password" "$DEF_PASS"
+    prompt DISK_SIZE  "Disk size"     "20G"       size
+    prompt MEMORY     "RAM (MB)"      "2048"      num
+    prompt CPUS       "CPU cores"     "2"         num
  
-    # Username
+    local tmp_port
     while true; do
-        print_status INPUT "Username [default: $DEFAULT_USERNAME]: "; read -r USERNAME
-        USERNAME="${USERNAME:-$DEFAULT_USERNAME}"
-        validate_input username "$USERNAME" && break
-    done
- 
-    # Password
-    while true; do
-        print_status INPUT "Password [default: $DEFAULT_PASSWORD]: "; read -rs PASSWORD; echo
-        PASSWORD="${PASSWORD:-$DEFAULT_PASSWORD}"
-        [[ -n "$PASSWORD" ]] && break
-        print_status ERROR "Password cannot be empty."
-    done
- 
-    # Disk Size
-    while true; do
-        print_status INPUT "Disk Size [default: 20G]: "; read -r DISK_SIZE
-        DISK_SIZE="${DISK_SIZE:-20G}"
-        validate_input size "$DISK_SIZE" && break
-    done
- 
-    # Memory
-    while true; do
-        print_status INPUT "Memory MB [default: 2048]: "; read -r MEMORY
-        MEMORY="${MEMORY:-2048}"
-        validate_input number "$MEMORY" && break
-    done
- 
-    # CPUs
-    while true; do
-        print_status INPUT "CPU Count [default: 2]: "; read -r CPUS
-        CPUS="${CPUS:-2}"
-        validate_input number "$CPUS" && break
-    done
- 
-    # SSH Port
-    while true; do
-        print_status INPUT "SSH Port [default: 2222]: "; read -r SSH_PORT
-        SSH_PORT="${SSH_PORT:-2222}"
-        validate_input port "$SSH_PORT" || continue
-        if ss -tln 2>/dev/null | grep -q ":$SSH_PORT "; then
-            print_status ERROR "Port $SSH_PORT is already in use."
-            continue
+        prompt tmp_port "SSH Port" "2222" port
+        if ss -tln 2>/dev/null | grep -q ":$tmp_port "; then
+            err "Port $tmp_port is already in use."
+        else
+            SSH_PORT="$tmp_port"; break
         fi
-        break
     done
  
-    # GUI Mode
+    local gui_in
     while true; do
-        print_status INPUT "Enable GUI display? [y/N]: "; read -r gui_in
-        gui_in="${gui_in:-n}"
-        if [[ "$gui_in" =~ ^[Yy]$ ]]; then GUI_MODE=true; break
+        ask "Enable GUI display? [y/N]: "; read -r gui_in; gui_in="${gui_in:-n}"
+        if   [[ "$gui_in" =~ ^[Yy]$ ]]; then GUI_MODE=true;  break
         elif [[ "$gui_in" =~ ^[Nn]$ ]]; then GUI_MODE=false; break
-        fi
-        print_status ERROR "Enter y or n."
+        else err "Enter y or n."; fi
     done
  
-    # Extra port forwards
-    print_status INPUT "Extra port forwards (e.g. 8080:80,3306:3306) [Enter for none]: "; read -r PORT_FORWARDS
+    ask "Extra port forwards e.g. 8080:80,3306:3306 [Enter=none]: "; read -r PORT_FORWARDS
  
     IMG_FILE="$VM_DIR/$VM_NAME.img"
     SEED_FILE="$VM_DIR/$VM_NAME-seed.iso"
     CREATED="$(date)"
  
     echo
-    setup_vm_image && save_vm_config
-    print_status INPUT "Press Enter to continue..."; read -r
+    setup_image && save_cfg
+    ask "Press Enter to continue..."; read -r
 }
  
-# ─── BUILD QEMU COMMAND ──────────────────────────────────────
-build_qemu_cmd() {
-    local kvm_flags=()
-    if kvm_available; then
-        kvm_flags=(-enable-kvm -cpu host)
-        print_status KVM "KVM acceleration ENABLED — full native speed!"
-    else
-        kvm_flags=(-machine type=pc,accel=tcg -cpu qemu64)
-        print_status WARN "KVM not available — running in software emulation (TCG)."
-        print_status INFO "For KVM: sudo modprobe kvm_intel (or kvm_amd) and check /dev/kvm"
-    fi
- 
-    QEMU_CMD=(
-        qemu-system-x86_64
-        "${kvm_flags[@]}"
-        -m "$MEMORY"
-        -smp "$CPUS"
-        -drive "file=$IMG_FILE,format=qcow2,if=virtio,cache=writeback,aio=threads"
-        -drive "file=$SEED_FILE,format=raw,if=virtio"
-        -boot order=c,strict=on
-        -device virtio-net-pci,netdev=net0,mac=52:54:00:$(printf '%02x:%02x:%02x' $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)))
-        -netdev "user,id=net0,hostfwd=tcp::${SSH_PORT}-:22"
-        -device virtio-balloon-pci
-        -object "rng-random,filename=/dev/urandom,id=rng0"
-        -device virtio-rng-pci,rng=rng0
-        -no-hpet
-        -rtc base=utc,clock=host
-        -name "$VM_NAME"
-    )
- 
-    # Extra port forwards
-    if [[ -n "$PORT_FORWARDS" ]]; then
-        IFS=',' read -ra fwds <<< "$PORT_FORWARDS"
-        local fwd_str="user,id=fwd0"
-        for fwd in "${fwds[@]}"; do
-            IFS=':' read -r hp gp <<< "$fwd"
-            fwd_str+=",hostfwd=tcp::${hp}-:${gp}"
-        done
-        QEMU_CMD+=(-netdev "$fwd_str" -device virtio-net-pci,netdev=fwd0)
-    fi
- 
-    if [[ "$GUI_MODE" == true ]]; then
-        QEMU_CMD+=(-vga virtio -display gtk)
-    else
-        QEMU_CMD+=(-nographic -serial mon:stdio)
-    fi
-}
- 
-# ─── START VM ────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════
+#  START / STOP VM
+# ══════════════════════════════════════════════════════
 start_vm() {
-    local vm_name=$1
-    load_vm_config "$vm_name" || return 1
+    load_cfg "$1" || return 1
  
-    if ! check_image_lock "$IMG_FILE" "$vm_name"; then
-        print_status ERROR "Cannot start — image locked."
-        print_status INPUT "Force-kill all QEMU on this image? [y/N]: "; read -r fk
+    if img_locked "$IMG_FILE"; then
+        err "Cannot start — image is locked."
+        ask "Force-kill all QEMU on this image? [y/N]: "; read -r fk
         if [[ "$fk" =~ ^[Yy]$ ]]; then
             pkill -f "qemu-system.*$(basename "$IMG_FILE")" 2>/dev/null; sleep 2
             pkill -9 -f "qemu-system.*$(basename "$IMG_FILE")" 2>/dev/null
             rm -f "${IMG_FILE}.lock"
-        else
-            return 1
-        fi
+        else return 1; fi
     fi
  
-    if is_vm_running "$vm_name"; then
-        print_status WARN "VM '$vm_name' is already running."
-        print_status INPUT "Stop and restart? [y/N]: "; read -r rc
-        [[ "$rc" =~ ^[Yy]$ ]] && { stop_vm "$vm_name"; sleep 2; } || return 1
+    if vm_running "$1"; then
+        warn "VM '$1' is already running."
+        ask "Stop and restart? [y/N]: "; read -r rc
+        if [[ "$rc" =~ ^[Yy]$ ]]; then stop_vm "$1"; sleep 2; else return 1; fi
     fi
  
-    [[ ! -f "$IMG_FILE" ]]  && { print_status ERROR "Image not found: $IMG_FILE"; return 1; }
-    [[ ! -f "$SEED_FILE" ]] && { print_status WARN "Seed missing, recreating..."; setup_vm_image; }
+    [[ ! -f "$IMG_FILE"  ]] && { err "Image not found: $IMG_FILE";  return 1; }
+    [[ ! -f "$SEED_FILE" ]] && { warn "Seed missing — recreating..."; setup_image; }
  
     echo
-    divider "─" "$C"
-    echo -e "  ${C}${BLD}⚡  STARTING VM: $vm_name${N}"
-    divider "─" "$C"
-    echo -e "  ${W}Mode  :${N} $(kvm_status_msg)"
-    echo -e "  ${W}RAM   :${N} ${C}${MEMORY}MB${N}   ${W}CPUs:${N} ${C}${CPUS}${N}   ${W}Disk:${N} ${C}${DISK_SIZE}${N}"
-    echo -e "  ${W}SSH   :${N} ${G}ssh -p $SSH_PORT $USERNAME@localhost${N}"
-    echo -e "  ${W}Pass  :${N} ${G}$PASSWORD${N}"
-    [[ "$GUI_MODE" != true ]] && echo -e "  ${D}Tip: Press Ctrl+A then X to exit QEMU console${N}"
-    divider "─" "$C"
+    _line "-" "$C"
+    echo -e "  ${C}${BLD}  STARTING:  $1${N}"
+    _line "-" "$DIM"
+    echo -e "  ${W}RAM  :${N} ${C}${MEMORY}MB${N}   ${W}CPUs:${N} ${C}${CPUS}${N}   ${W}Disk:${N} ${C}${DISK_SIZE}${N}"
+    echo -e "  ${W}SSH  :${N} ${G}ssh -p $SSH_PORT $USERNAME@localhost${N}"
+    echo -e "  ${W}Pass :${N} ${G}$PASSWORD${N}"
+    [[ "${GUI_MODE:-false}" != true ]] && echo -e "  ${DIM}Tip: Ctrl+A then X to exit QEMU console${N}"
+    _line "-" "$C"
     echo
  
-    build_qemu_cmd
- 
+    build_qemu
     "${QEMU_CMD[@]}" || {
-        print_status ERROR "QEMU exited with error."
+        err "QEMU exited with an error."
         rm -f "${IMG_FILE}.lock" 2>/dev/null
         return 1
     }
- 
-    print_status INFO "VM '$vm_name' shut down."
+    msg "VM '$1' has been shut down."
     rm -f "${IMG_FILE}.lock" 2>/dev/null
 }
  
-# ─── STOP VM ─────────────────────────────────────────────────
 stop_vm() {
-    local vm_name=$1
-    load_vm_config "$vm_name" || return 1
- 
-    if is_vm_running "$vm_name"; then
-        print_status INFO "Sending shutdown signal to '$vm_name'..."
-        pkill -f "qemu-system.*$(basename "$IMG_FILE")" 2>/dev/null
-        sleep 2
-        if is_vm_running "$vm_name"; then
-            print_status WARN "Force-killing..."
-            pkill -9 -f "qemu-system.*$(basename "$IMG_FILE")" 2>/dev/null
-        fi
+    load_cfg "$1" || return 1
+    if vm_running "$1"; then
+        step "Sending shutdown signal to '$1'..."
+        pkill -f "qemu-system.*$(basename "$IMG_FILE")" 2>/dev/null; sleep 2
+        vm_running "$1" && pkill -9 -f "qemu-system.*$(basename "$IMG_FILE")" 2>/dev/null
         rm -f "${IMG_FILE}.lock" 2>/dev/null
-        is_vm_running "$vm_name" \
-            && print_status ERROR "Failed to stop VM." \
-            || print_status SUCCESS "VM '$vm_name' stopped."
+        vm_running "$1" && err "Failed to stop VM." || ok "VM '$1' stopped."
     else
-        print_status INFO "VM '$vm_name' is already stopped."
-        rm -f "${IMG_FILE}.lock" 2>/dev/null
+        msg "VM '$1' is not running."; rm -f "${IMG_FILE}.lock" 2>/dev/null
     fi
 }
  
-# ─── SHOW VM INFO ────────────────────────────────────────────
-show_vm_info() {
-    local vm_name=$1
-    load_vm_config "$vm_name" || return 1
- 
-    echo
-    divider "═" "$C"
-    echo -e "  ${C}${BLD}📋  VM INFO: $vm_name${N}"
-    divider "─" "$D"
-    echo -e "  ${Y}OS          :${N}  $OS_TYPE ($CODENAME)"
-    echo -e "  ${Y}Hostname    :${N}  $HOSTNAME"
-    echo -e "  ${Y}Username    :${N}  $USERNAME"
-    echo -e "  ${Y}Password    :${N}  $PASSWORD"
-    echo -e "  ${Y}SSH Port    :${N}  $SSH_PORT"
-    echo -e "  ${Y}Memory      :${N}  ${MEMORY}MB"
-    echo -e "  ${Y}CPUs        :${N}  $CPUS"
-    echo -e "  ${Y}Disk        :${N}  $DISK_SIZE"
-    echo -e "  ${Y}GUI Mode    :${N}  $GUI_MODE"
-    echo -e "  ${Y}Port Fwds   :${N}  ${PORT_FORWARDS:-None}"
-    echo -e "  ${Y}Created     :${N}  $CREATED"
-    echo -e "  ${Y}Image File  :${N}  $IMG_FILE"
-    local img_sz="N/A"
-    [[ -f "$IMG_FILE" ]] && img_sz=$(du -sh "$IMG_FILE" 2>/dev/null | cut -f1)
-    echo -e "  ${Y}Image Size  :${N}  $img_sz (actual on disk)"
-    is_vm_running "$vm_name" \
-        && echo -e "  ${Y}Status      :${N}  ${G}${BLD}RUNNING 🚀${N}" \
-        || echo -e "  ${Y}Status      :${N}  ${D}Stopped 💤${N}"
-    divider "═" "$C"
-    echo
-    print_status INPUT "Press Enter to continue..."; read -r
+# ══════════════════════════════════════════════════════
+#  VM INFO / DELETE / EDIT / RESIZE / PERF / FIX
+# ══════════════════════════════════════════════════════
+vm_info() {
+    load_cfg "$1" || return 1
+    local sz="N/A"; [[ -f "$IMG_FILE" ]] && sz=$(du -sh "$IMG_FILE" 2>/dev/null | cut -f1)
+    echo; _line "=" "$C"
+    echo -e "  ${C}${BLD}  VM INFO -- $1${N}"
+    _line "-" "$DIM"
+    printf "  ${Y}%-14s${N}  %s\n" "OS"           "$OS_TYPE ($CODENAME)"
+    printf "  ${Y}%-14s${N}  %s\n" "Hostname"      "$HOSTNAME"
+    printf "  ${Y}%-14s${N}  %s\n" "Username"      "$USERNAME"
+    printf "  ${Y}%-14s${N}  %s\n" "Password"      "$PASSWORD"
+    printf "  ${Y}%-14s${N}  %s\n" "SSH Port"      "$SSH_PORT"
+    printf "  ${Y}%-14s${N}  %s\n" "Memory"        "${MEMORY}MB"
+    printf "  ${Y}%-14s${N}  %s\n" "CPUs"          "$CPUS"
+    printf "  ${Y}%-14s${N}  %s\n" "Disk"          "$DISK_SIZE  (${sz} on disk)"
+    printf "  ${Y}%-14s${N}  %s\n" "GUI Mode"      "$GUI_MODE"
+    printf "  ${Y}%-14s${N}  %s\n" "Port Forwards" "${PORT_FORWARDS:-None}"
+    printf "  ${Y}%-14s${N}  %s\n" "Created"       "$CREATED"
+    _line "-" "$DIM"
+    vm_running "$1" \
+        && echo -e "  ${G}${BLD}  Status: RUNNING${N}" \
+        || echo -e "  ${DIM}  Status: Stopped${N}"
+    _line "=" "$C"; echo
+    ask "Press Enter to continue..."; read -r
 }
  
-# ─── DELETE VM ───────────────────────────────────────────────
 delete_vm() {
-    local vm_name=$1
-    load_vm_config "$vm_name" || return 1
- 
-    echo
-    print_status WARN "This will PERMANENTLY DELETE VM '$vm_name' and all its data!"
-    print_status INPUT "Type the VM name to confirm deletion: "; read -r confirm
-    if [[ "$confirm" != "$vm_name" ]]; then
-        print_status INFO "Deletion cancelled."
-        return 0
-    fi
- 
-    is_vm_running "$vm_name" && { stop_vm "$vm_name"; sleep 1; }
-    rm -f "$IMG_FILE" "$SEED_FILE" "$VM_DIR/$vm_name.conf" "${IMG_FILE}.lock" 2>/dev/null
-    print_status SUCCESS "VM '$vm_name' deleted permanently."
+    load_cfg "$1" || return 1
+    echo; warn "This will PERMANENTLY DELETE '$1' and all its data!"
+    ask "Type the VM name to confirm: "; read -r conf
+    if [[ "$conf" != "$1" ]]; then msg "Deletion cancelled."; return 0; fi
+    vm_running "$1" && { stop_vm "$1"; sleep 1; }
+    rm -f "$IMG_FILE" "$SEED_FILE" "$VM_DIR/$1.conf" "${IMG_FILE}.lock" 2>/dev/null
+    ok "VM '$1' permanently deleted."
 }
  
-# ─── EDIT VM CONFIG ──────────────────────────────────────────
-edit_vm_config() {
-    local vm_name=$1
-    load_vm_config "$vm_name" || return 1
-    local changed=false
- 
+edit_vm() {
+    load_cfg "$1" || return 1
     while true; do
-        echo
-        echo -e "  ${C}${BLD}✏️   EDIT VM: $vm_name${N}"
-        divider "─" "$D"
-        echo -e "   ${C}1)${N} Hostname       ${D}[$HOSTNAME]${N}"
-        echo -e "   ${C}2)${N} Username       ${D}[$USERNAME]${N}"
-        echo -e "   ${C}3)${N} Password       ${D}[****]${N}"
-        echo -e "   ${C}4)${N} SSH Port       ${D}[$SSH_PORT]${N}"
-        echo -e "   ${C}5)${N} GUI Mode       ${D}[$GUI_MODE]${N}"
-        echo -e "   ${C}6)${N} Port Forwards  ${D}[${PORT_FORWARDS:-None}]${N}"
-        echo -e "   ${C}7)${N} Memory (MB)    ${D}[$MEMORY]${N}"
-        echo -e "   ${C}8)${N} CPU Count      ${D}[$CPUS]${N}"
-        echo -e "   ${C}9)${N} Disk Size      ${D}[$DISK_SIZE]${N}"
-        echo -e "   ${R}0)${N} Back"
-        echo
-        print_status INPUT "Choice: "; read -r ec
- 
+        echo; echo -e "  ${C}${BLD}  EDIT VM -- $1${N}"; _line "-" "$DIM"
+        echo -e "   ${C} 1)${N}  Hostname        ${DIM}[$HOSTNAME]${N}"
+        echo -e "   ${C} 2)${N}  Username        ${DIM}[$USERNAME]${N}"
+        echo -e "   ${C} 3)${N}  Password        ${DIM}[****]${N}"
+        echo -e "   ${C} 4)${N}  SSH Port        ${DIM}[$SSH_PORT]${N}"
+        echo -e "   ${C} 5)${N}  GUI Mode        ${DIM}[$GUI_MODE]${N}"
+        echo -e "   ${C} 6)${N}  Port Forwards   ${DIM}[${PORT_FORWARDS:-None}]${N}"
+        echo -e "   ${C} 7)${N}  Memory (MB)     ${DIM}[$MEMORY]${N}"
+        echo -e "   ${C} 8)${N}  CPU Count       ${DIM}[$CPUS]${N}"
+        echo -e "   ${C} 9)${N}  Disk Size       ${DIM}[$DISK_SIZE]${N}"
+        echo -e "   ${R} 0)${N}  Back"; echo
+        ask "Choice: "; read -r ec
         case $ec in
-            1) while true; do print_status INPUT "New hostname [$HOSTNAME]: "; read -r v; v="${v:-$HOSTNAME}"; validate_input name "$v" && HOSTNAME="$v" && break; done; changed=true ;;
-            2) while true; do print_status INPUT "New username [$USERNAME]: "; read -r v; v="${v:-$USERNAME}"; validate_input username "$v" && USERNAME="$v" && break; done; changed=true ;;
-            3) while true; do print_status INPUT "New password: "; read -rs v; echo; [[ -n "$v" ]] && PASSWORD="$v" && break || print_status ERROR "Cannot be empty."; done; changed=true ;;
-            4) while true; do print_status INPUT "New SSH port [$SSH_PORT]: "; read -r v; v="${v:-$SSH_PORT}"; validate_input port "$v" && SSH_PORT="$v" && break; done; changed=true ;;
-            5) print_status INPUT "GUI mode? [y/N]: "; read -r v; [[ "$v" =~ ^[Yy]$ ]] && GUI_MODE=true || GUI_MODE=false; changed=true ;;
-            6) print_status INPUT "Port forwards [${PORT_FORWARDS:-None}]: "; read -r v; PORT_FORWARDS="${v:-$PORT_FORWARDS}"; changed=true ;;
-            7) while true; do print_status INPUT "Memory MB [$MEMORY]: "; read -r v; v="${v:-$MEMORY}"; validate_input number "$v" && MEMORY="$v" && break; done; changed=true ;;
-            8) while true; do print_status INPUT "CPU count [$CPUS]: "; read -r v; v="${v:-$CPUS}"; validate_input number "$v" && CPUS="$v" && break; done; changed=true ;;
-            9) while true; do print_status INPUT "Disk size [$DISK_SIZE]: "; read -r v; v="${v:-$DISK_SIZE}"; validate_input size "$v" && DISK_SIZE="$v" && break; done; changed=true ;;
+            1) prompt HOSTNAME   "New hostname"  "$HOSTNAME"   name ;;
+            2) prompt USERNAME   "New username"  "$USERNAME"   user ;;
+            3) prompt_secret PASSWORD "New password" "$PASSWORD" ;;
+            4) local np
+               while true; do
+                   prompt np "New SSH port" "$SSH_PORT" port
+                   if [[ "$np" != "$SSH_PORT" ]] && ss -tln 2>/dev/null | grep -q ":$np "; then
+                       err "Port $np in use."
+                   else SSH_PORT="$np"; break; fi
+               done ;;
+            5) ask "GUI mode? [y/N]: "; read -r gi
+               [[ "$gi" =~ ^[Yy]$ ]] && GUI_MODE=true || GUI_MODE=false ;;
+            6) ask "Port forwards [${PORT_FORWARDS:-None}]: "; read -r pf
+               PORT_FORWARDS="${pf:-$PORT_FORWARDS}" ;;
+            7) prompt MEMORY    "Memory MB"  "$MEMORY"    num  ;;
+            8) prompt CPUS      "CPU count"  "$CPUS"      num  ;;
+            9) prompt DISK_SIZE "Disk size"  "$DISK_SIZE" size ;;
             0) break ;;
-            *) print_status ERROR "Invalid option." ;;
+            *) err "Invalid option."; continue ;;
         esac
- 
-        if $changed; then
-            save_vm_config
-            # If creds/hostname changed, rebuild seed
-            [[ "$ec" =~ ^[123]$ ]] && setup_vm_image
-            changed=false
-        fi
+        save_cfg
+        [[ "$ec" =~ ^[123]$ ]] && setup_image
     done
 }
  
-# ─── RESIZE DISK ─────────────────────────────────────────────
-resize_vm_disk() {
-    local vm_name=$1
-    load_vm_config "$vm_name" || return 1
-    is_vm_running "$vm_name" && { print_status ERROR "Stop the VM before resizing."; return 1; }
- 
-    print_status INFO "Current disk size: $DISK_SIZE"
-    while true; do
-        print_status INPUT "New disk size (e.g. 50G): "; read -r ns
-        validate_input size "$ns" || continue
-        print_status STEP "Resizing $IMG_FILE → $ns..."
-        if qemu-img resize "$IMG_FILE" "$ns"; then
-            DISK_SIZE="$ns"; save_vm_config
-            print_status SUCCESS "Resized to $ns"
-        else
-            print_status ERROR "Resize failed."
-        fi
-        break
-    done
+resize_disk() {
+    load_cfg "$1" || return 1
+    vm_running "$1" && { err "Stop the VM before resizing."; return 1; }
+    msg "Current size: $DISK_SIZE"
+    local ns; prompt ns "New disk size" "$DISK_SIZE" size
+    step "Resizing $IMG_FILE to $ns..."
+    if qemu-img resize "$IMG_FILE" "$ns"; then
+        DISK_SIZE="$ns"; save_cfg; ok "Resized to $ns."
+    else err "Resize failed."; fi
 }
  
-# ─── PERFORMANCE STATS ───────────────────────────────────────
-show_vm_performance() {
-    local vm_name=$1
-    load_vm_config "$vm_name" || return 1
- 
-    echo
-    divider "─" "$C"
-    echo -e "  ${C}${BLD}📊  PERFORMANCE: $vm_name${N}"
-    divider "─" "$D"
- 
-    if is_vm_running "$vm_name"; then
-        local pid
-        pid=$(pgrep -f "qemu-system.*$(basename "$IMG_FILE")" | head -1)
+vm_perf() {
+    load_cfg "$1" || return 1
+    echo; _line "-" "$C"
+    echo -e "  ${C}${BLD}  PERFORMANCE -- $1${N}"; _line "-" "$DIM"
+    if vm_running "$1"; then
+        local pid; pid=$(pgrep -f "qemu-system.*$(basename "$IMG_FILE")" | head -1)
         if [[ -n "$pid" ]]; then
-            echo -e "  ${Y}QEMU PID : ${C}$pid${N}"
-            local cpu_mem
-            cpu_mem=$(ps -p "$pid" -o %cpu,%mem --no-headers 2>/dev/null | xargs)
-            echo -e "  ${Y}CPU/MEM  : ${C}$cpu_mem${N}"
-            echo
-            echo -e "  ${Y}System Memory:${N}"
-            free -h | sed 's/^/    /'
-            echo
-            echo -e "  ${Y}Image Size on Disk:${N}"
-            du -sh "$IMG_FILE" 2>/dev/null | sed 's/^/    /'
+            echo -e "  ${Y}PID    :${N} $pid"
+            local cpumem; cpumem=$(ps -p "$pid" -o %cpu,%mem --no-headers 2>/dev/null | xargs)
+            echo -e "  ${Y}CPU/MEM:${N} $cpumem"; echo
+            echo -e "  ${Y}System Memory:${N}"; free -h 2>/dev/null | sed 's/^/    /'; echo
+            echo -e "  ${Y}Image on Disk:${N}"; du -sh "$IMG_FILE" 2>/dev/null | sed 's/^/    /'
         fi
     else
-        echo -e "  ${D}VM is not running.${N}"
-        echo -e "  Config: ${MEMORY}MB RAM | $CPUS vCPUs | $DISK_SIZE disk"
+        echo -e "  ${DIM}VM is not running.${N}"
+        echo -e "  Config: ${MEMORY}MB RAM | $CPUS vCPUs | $DISK_SIZE"
     fi
-    divider "─" "$D"
-    echo
-    print_status INPUT "Press Enter to continue..."; read -r
+    _line "-" "$DIM"; echo
+    ask "Press Enter to continue..."; read -r
 }
  
-# ─── FIX VM ISSUES ───────────────────────────────────────────
-fix_vm_issues() {
-    local vm_name=$1
-    load_vm_config "$vm_name" || return 1
- 
-    echo
-    echo -e "  ${C}${BLD}🔧  FIX VM ISSUES: $vm_name${N}"
-    divider "─" "$D"
-    echo -e "   ${C}1)${N} Remove lock files"
-    echo -e "   ${C}2)${N} Recreate seed image"
-    echo -e "   ${C}3)${N} Recreate config file"
-    echo -e "   ${C}4)${N} Force-kill stuck QEMU processes"
-    echo -e "   ${C}5)${N} Verify image integrity"
-    echo -e "   ${R}0)${N} Back"
-    echo
-    print_status INPUT "Choice: "; read -r fc
- 
+fix_vm() {
+    load_cfg "$1" || return 1
+    echo; echo -e "  ${C}${BLD}  FIX ISSUES -- $1${N}"; _line "-" "$DIM"
+    echo -e "   ${C}1)${N}  Remove lock files"
+    echo -e "   ${C}2)${N}  Recreate seed image"
+    echo -e "   ${C}3)${N}  Rewrite config file"
+    echo -e "   ${C}4)${N}  Force-kill stuck QEMU"
+    echo -e "   ${C}5)${N}  Verify image integrity"
+    echo -e "   ${R}0)${N}  Back"; echo
+    ask "Choice: "; read -r fc
     case $fc in
-        1) rm -f "${IMG_FILE}.lock" "${IMG_FILE}"*.lock 2>/dev/null; print_status SUCCESS "Lock files removed." ;;
-        2) rm -f "$SEED_FILE"; setup_vm_image ;;
-        3) save_vm_config ;;
-        4)
-            pkill -f "qemu-system.*$(basename "$IMG_FILE")" 2>/dev/null; sleep 1
-            pgrep -f "qemu-system.*$(basename "$IMG_FILE")" &>/dev/null \
-                && pkill -9 -f "qemu-system.*$(basename "$IMG_FILE")" 2>/dev/null \
-                && print_status SUCCESS "Force-killed." \
-                || print_status INFO "No stuck processes found."
-            ;;
-        5)
-            print_status STEP "Running qemu-img check..."
-            qemu-img check "$IMG_FILE" && print_status SUCCESS "Image OK." || print_status ERROR "Image may be corrupted."
-            ;;
+        1) rm -f "${IMG_FILE}.lock" "${IMG_FILE}"*.lock 2>/dev/null; ok "Lock files removed." ;;
+        2) rm -f "$SEED_FILE"; setup_image ;;
+        3) save_cfg ;;
+        4) pkill -f "qemu-system.*$(basename "$IMG_FILE")" 2>/dev/null; sleep 1
+           pkill -9 -f "qemu-system.*$(basename "$IMG_FILE")" 2>/dev/null; ok "Killed QEMU processes." ;;
+        5) step "Checking image integrity..."
+           qemu-img check "$IMG_FILE" && ok "Image OK." || err "Image may be corrupted." ;;
         0) return ;;
-        *) print_status ERROR "Invalid option." ;;
+        *) err "Invalid option." ;;
     esac
-    print_status INPUT "Press Enter to continue..."; read -r
+    ask "Press Enter to continue..."; read -r
 }
  
-# ─── GITHUB VPS (OPTION 1) ───────────────────────────────────
-launch_github_vps() {
+# ══════════════════════════════════════════════════════
+#  IDX DEV.NIX SETUP
+# ══════════════════════════════════════════════════════
+idx_setup() {
     print_header
-    echo -e "  ${C}${BLD}🐳  GITHUB VPS (Docker + KVM)${N}"
-    divider "─" "$D"
-    echo
-    if ! command -v docker &>/dev/null; then
-        print_status ERROR "Docker is not installed."
-        print_status INFO  "Install: curl -fsSL https://get.docker.com | sh"
-        print_status INPUT "Press Enter to return..."; read -r
-        return 1
-    fi
-    local kvm_flag=""
-    kvm_available && kvm_flag="--device /dev/kvm" && print_status KVM "Passing /dev/kvm to container."
-    echo
-    docker run -it --rm $kvm_flag proxlegendyt/debian12 \
-        || print_status ERROR "Docker container failed."
-    print_status INPUT "Press Enter to return..."; read -r
-}
+    echo -e "  ${C}${BLD}  IDX DEV.NIX SETUP${N}"; echo
+    _line "-" "$DIM"; echo
  
-# ─── IDX TOOL SETUP (OPTION 2) ──────────────────────────────
-setup_idx_tool() {
-    print_header
-    echo -e "  ${C}${BLD}🔧  IDX DEV.NIX SETUP${N}"
-    divider "─" "$D"
-    echo
- 
-    # ── Auto-detect project root ───────────────────────────────
-    # Walk up from $PWD looking for .idx folder or use script location
-    local project_root=""
-    local search="$PWD"
+    local root="" search="$PWD"
     for _ in 1 2 3 4 5; do
-        if [[ -d "$search/.idx" ]]; then
-            project_root="$search"
-            break
-        fi
+        [[ -d "$search/.idx" ]] && root="$search" && break
         search="$(dirname "$search")"
     done
  
-    # If not found, offer common IDX locations
-    if [[ -z "$project_root" ]]; then
-        echo -e "  ${Y}Could not auto-detect your IDX project folder.${N}"
-        echo -e "  ${W}Common locations:${N}"
-        echo -e "   ${C}1)${N}  $HOME  (home directory)"
-        echo -e "   ${C}2)${N}  $PWD   (current directory)"
-        echo -e "   ${C}3)${N}  Enter custom path"
-        echo
-        print_status INPUT "Choice [1-3]: "; read -r loc_choice
-        case $loc_choice in
-            1) project_root="$HOME" ;;
-            2) project_root="$PWD" ;;
-            3) print_status INPUT "Enter full path: "; read -r project_root ;;
-            *) project_root="$PWD" ;;
-        esac
+    if [[ -z "$root" ]]; then
+        warn "IDX project not auto-detected."
+        echo -e "   ${C}1)${N}  $HOME"
+        echo -e "   ${C}2)${N}  $PWD"
+        echo -e "   ${C}3)${N}  Custom path"; echo
+        ask "Choice [1-3]: "; read -r lc
+        case $lc in 1) root="$HOME" ;; 2) root="$PWD" ;;
+            3) ask "Full path: "; read -r root ;; *) root="$PWD" ;; esac
     else
-        echo -e "  ${G}${BLD}IDX project detected at:${N} ${C}$project_root${N}"
+        ok "IDX project detected: $root"
     fi
  
-    local idx_dir="$project_root/.idx"
-    local nix_file="$idx_dir/dev.nix"
-    mkdir -p "$idx_dir"
+    local nix="$root/.idx/dev.nix"
+    mkdir -p "$root/.idx"
+    [[ -f "$nix" ]] && cp "$nix" "${nix}.bak.$(date +%s)" && warn "Old dev.nix backed up."
  
-    # ── Backup existing dev.nix if present ────────────────────
-    if [[ -f "$nix_file" ]]; then
-        local backup="$nix_file.bak.$(date +%s)"
-        cp "$nix_file" "$backup"
-        print_status WARN "Existing dev.nix backed up → $backup"
-    fi
- 
-    echo
-    print_status STEP "Writing dev.nix with all VM packages..."
-    echo
- 
-    # ── Write the full dev.nix ─────────────────────────────────
-    cat > "$nix_file" <<'DEVNIX'
-# ============================================================
-#  PROXLEGENDYT — IDX dev.nix
-#  Provides: QEMU + KVM tools + cloud-init + helpers
-#  After saving this file, click "Rebuild Environment" in IDX.
-# ============================================================
+    cat > "$nix" <<'DEVNIX'
+# =========================================================
+#  PROXLEGENDYT  --  IDX dev.nix
+#  After saving: Ctrl+Shift+P -> "Firebase Studio: Rebuild"
+# =========================================================
 { pkgs, ... }: {
  
   channel = "stable-24.05";
  
   packages = with pkgs; [
-    # ── VM core ──────────────────────────────────────────────
-    qemu_kvm          # QEMU with KVM support  (qemu-system-x86_64)
-    qemu-utils        # qemu-img, qemu-nbd, etc.
- 
-    # ── Cloud-init seed image builder ────────────────────────
-    cloud-utils       # provides cloud-localds
- 
-    # ── Networking & utilities ───────────────────────────────
-    wget              # download OS images
-    curl              # HTTP client
-    lsof              # check open files / locked images
-    openssl           # password hashing for cloud-init
-    iproute2          # ss, ip commands
-    procps            # ps, pgrep, pkill
- 
-    # ── Shell helpers ────────────────────────────────────────
-    unzip
-    git
-    sudo
-    bash
-    coreutils
+    qemu_kvm          # qemu-system-x86_64 with KVM
+    qemu-utils        # qemu-img, qemu-nbd
+    cloud-utils       # cloud-localds
+    wget curl lsof openssl
+    iproute2 procps
+    unzip git sudo bash coreutils
   ];
  
-  # ── Environment variables ──────────────────────────────────
-  env = {
-    VM_DIR = "/home/user/vms";
-  };
+  env = { VM_DIR = "/home/user/vms"; };
  
-  # ── IDX workspace config ──────────────────────────────────
   idx = {
     extensions = [];
- 
     workspace = {
-      # Runs once when workspace is first created
       onCreate = {
-        setup-vms = "mkdir -p /home/user/vms && chmod +x mainmenu 2>/dev/null || true";
+        setup = "mkdir -p /home/user/vms && chmod +x mainmenu 2>/dev/null || true";
       };
- 
-      # Runs every time workspace starts
       onStart = {
-        check-kvm = ''
-          if [ -e /dev/kvm ]; then
-            echo "✅ KVM is available — full speed VM!"
-          else
-            echo "⚠️  KVM not found — will use software emulation (TCG)"
-          fi
+        kvm-check = ''
+          [ -e /dev/kvm ] \
+            && echo "KVM available -- full speed!" \
+            || echo "KVM not found -- TCG mode"
         '';
       };
     };
@@ -1159,199 +773,169 @@ setup_idx_tool() {
 }
 DEVNIX
  
-    # ── Show result ───────────────────────────────────────────
-    echo -e "${C}"
-    cat "$nix_file"
-    echo -e "${N}"
-    divider "═" "$G"
-    echo -e "  ${G}${BLD}✅  dev.nix written to:${N} ${C}$nix_file${N}"
-    echo
+    echo; echo -e "${C}$(cat "$nix")${N}"; echo
+    _line "=" "$G"
+    ok "dev.nix written to: $nix"; echo
     echo -e "  ${Y}${BLD}NEXT STEPS:${N}"
-    echo -e "   ${W}1.${N} In IDX, press ${C}Ctrl+Shift+P${N}"
-    echo -e "   ${W}2.${N} Type: ${C}Firebase Studio: Rebuild Environment${N}"
-    echo -e "   ${W}3.${N} Wait for rebuild (~1-2 min)"
-    echo -e "   ${W}4.${N} Re-run this script — all packages will be ready!"
-    echo
-    echo -e "  ${D}Or click the IDX notification banner: \"Rebuild Environment\"${N}"
-    divider "═" "$G"
-    echo
-    print_status INPUT "Press Enter to return..."; read -r
+    echo -e "   ${W}1.${N}  Press ${C}Ctrl+Shift+P${N} in IDX"
+    echo -e "   ${W}2.${N}  Run: ${C}Firebase Studio: Rebuild Environment${N}"
+    echo -e "   ${W}3.${N}  Wait ~2 min, then re-run this script"
+    _line "=" "$G"; echo
+    ask "Press Enter to return..."; read -r
 }
  
-# ─── REAL VPS INSTALLER (OPTION 4) ───────────────────────────
-launch_real_vps() {
+# ══════════════════════════════════════════════════════
+#  GITHUB VPS  /  REAL VPS
+# ══════════════════════════════════════════════════════
+github_vps() {
     print_header
-    echo -e "  ${C}${BLD}🌐  REAL VPS INSTALLER (KVM/Any)${N}"
-    divider "─" "$D"
-    echo
-    print_status WARN "This will run external scripts. Make sure you trust the source."
-    print_status INPUT "Continue? [y/N]: "; read -r c
-    [[ ! "$c" =~ ^[Yy]$ ]] && return
- 
-    if command -v curl &>/dev/null; then
-        bash <(curl -fsSL https://raw.githubusercontent.com/nobita329/The-Coding-Hub/main/srv/vm/dd.sh) \
-            || print_status ERROR "Script 1 failed."
-        bash <(curl -fsSL https://raw.githubusercontent.com/JishnuTheGamer/Vps/main/n) \
-            || print_status ERROR "Script 2 failed."
-    else
-        print_status ERROR "curl not found. Install with: apt install curl"
+    echo -e "  ${C}${BLD}  GITHUB VPS (Docker + KVM)${N}"; echo
+    _line "-" "$DIM"; echo
+    if ! command -v docker &>/dev/null; then
+        err "Docker is not installed."
+        msg "Install: curl -fsSL https://get.docker.com | sh"
+        ask "Press Enter to return..."; read -r; return 1
     fi
-    print_status INPUT "Press Enter to return..."; read -r
+    local kvm_flag=""
+    kvm_ok && kvm_flag="--device /dev/kvm" && kvm_msg "Passing /dev/kvm to container."
+    echo
+    docker run -it --rm $kvm_flag proxlegendyt/debian12 || err "Docker container error."
+    ask "Press Enter to return..."; read -r
 }
  
-# ─── VM SELECTOR HELPER ──────────────────────────────────────
-select_vm() {
-    local prompt="$1"
-    local vms=("${@:2}")
-    local count=${#vms[@]}
- 
+real_vps() {
+    print_header
+    echo -e "  ${C}${BLD}  REAL VPS INSTALLER${N}"; echo
+    _line "-" "$DIM"; echo
+    warn "This runs external scripts. Ensure you trust the source."
+    ask "Continue? [y/N]: "; read -r c; [[ ! "$c" =~ ^[Yy]$ ]] && return
     echo
-    for i in "${!vms[@]}"; do
-        local status="${D}💤${N}"
-        is_vm_running "${vms[$i]}" && status="${G}🚀${N}"
-        printf "    ${C}%2d)${N}  %s  %b\n" $((i+1)) "${vms[$i]}" "$status"
+    if ! command -v curl &>/dev/null; then
+        err "curl not found. Install: apt install curl"; ask "Press Enter..."; read -r; return
+    fi
+    bash <(curl -fsSL https://raw.githubusercontent.com/nobita329/The-Coding-Hub/main/srv/vm/dd.sh) || err "Script 1 failed."
+    bash <(curl -fsSL https://raw.githubusercontent.com/JishnuTheGamer/Vps/main/n) || err "Script 2 failed."
+    ask "Press Enter to return..."; read -r
+}
+ 
+# ══════════════════════════════════════════════════════
+#  IDX VPS MAKER SUB-MENU
+# ══════════════════════════════════════════════════════
+idx_vps_menu() {
+    while true; do
+        print_header
+        echo -e "  ${C}${BLD}  IDX VPS MAKER  (QEMU + KVM-aware)${N}"; echo
+        _line "-" "$DIM"; echo
+ 
+        local vms=(); mapfile -t vms < <(vm_list); local vc=${#vms[@]}
+ 
+        if (( vc > 0 )); then
+            echo -e "  ${Y}${BLD}Your VMs:${N}"
+            for i in "${!vms[@]}"; do
+                load_cfg "${vms[$i]}" &>/dev/null
+                local st="${DIM}stopped${N}"; vm_running "${vms[$i]}" && st="${G}RUNNING${N}"
+                printf "    ${C}%2d)${N}  %-22s  %b\n" $((i+1)) "${vms[$i]}" "$st"
+            done
+            echo; _line "-" "$DIM"; echo
+        fi
+ 
+        echo -e "   ${G}1)${N}   Create New VM"
+        if (( vc > 0 )); then
+            echo -e "   ${C}2)${N}   Start VM"
+            echo -e "   ${C}3)${N}   Stop VM"
+            echo -e "   ${C}4)${N}   VM Info"
+            echo -e "   ${C}5)${N}   Edit VM"
+            echo -e "   ${C}6)${N}   Delete VM"
+            echo -e "   ${C}7)${N}   Resize Disk"
+            echo -e "   ${C}8)${N}   Performance"
+            echo -e "   ${C}9)${N}   Fix Issues"
+        fi
+        echo -e "   ${R}0)${N}   Back"; echo
+        ask "Choice: "; read -r c
+ 
+        case $c in
+            1) create_vm ;;
+            2) (( vc>0 )) && { select_vm "VM to start"  "${vms[@]}"; start_vm    "$SELECTED_VM"; } ;;
+            3) (( vc>0 )) && { select_vm "VM to stop"   "${vms[@]}"; stop_vm     "$SELECTED_VM"; } ;;
+            4) (( vc>0 )) && { select_vm "VM for info"  "${vms[@]}"; vm_info     "$SELECTED_VM"; } ;;
+            5) (( vc>0 )) && { select_vm "VM to edit"   "${vms[@]}"; edit_vm     "$SELECTED_VM"; } ;;
+            6) (( vc>0 )) && { select_vm "VM to delete" "${vms[@]}"; delete_vm   "$SELECTED_VM"; } ;;
+            7) (( vc>0 )) && { select_vm "VM to resize" "${vms[@]}"; resize_disk "$SELECTED_VM"; } ;;
+            8) (( vc>0 )) && { select_vm "VM for stats" "${vms[@]}"; vm_perf     "$SELECTED_VM"; } ;;
+            9) (( vc>0 )) && { select_vm "VM to fix"    "${vms[@]}"; fix_vm      "$SELECTED_VM"; } ;;
+            0) return ;;
+            *) err "Invalid option '$c'." ;;
+        esac
     done
-    echo
-    print_status INPUT "$prompt [1-$count]: "; read -r sel
-    if [[ "$sel" =~ ^[0-9]+$ ]] && (( sel >= 1 && sel <= count )); then
-        SELECTED_VM="${vms[$((sel-1))]}"
-        return 0
-    fi
-    print_status ERROR "Invalid selection."
-    return 1
 }
  
-# ─── MAIN MENU ───────────────────────────────────────────────
+# ══════════════════════════════════════════════════════
+#  MAIN MENU
+# ══════════════════════════════════════════════════════
 main_menu() {
     while true; do
         print_header
  
-        local vms=()
-        mapfile -t vms < <(get_vm_list)
-        local vm_count=${#vms[@]}
+        local vms=(); mapfile -t vms < <(vm_list); local vc=${#vms[@]}
  
-        if (( vm_count > 0 )); then
-            echo -e "  ${Y}${BLD}Your Virtual Machines:${N}"
+        if (( vc > 0 )); then
+            echo -e "  ${Y}${BLD}Virtual Machines:${N}"
             for i in "${!vms[@]}"; do
-                local st="${D}💤 stopped${N}"
-                is_vm_running "${vms[$i]}" && st="${G}🚀 running${N}"
-                printf "    ${C}%2d)${N}  %-20s  %b\n" $((i+1)) "${vms[$i]}" "$st"
+                load_cfg "${vms[$i]}" &>/dev/null
+                local st="${DIM}stopped${N}"; vm_running "${vms[$i]}" && st="${G}RUNNING${N}"
+                printf "    ${C}%2d)${N}  %-24s  %b\n" $((i+1)) "${vms[$i]}" "$st"
             done
-            echo
-            divider "─" "$D"
-            echo
+            echo; _line "-" "$DIM"; echo
         fi
  
-        echo -e "  ${W}${BLD}MAIN MENU${N}"
+        echo -e "  ${W}${BLD}MAIN MENU${N}"; echo
+        echo -e "   ${G}1)${N}   GitHub VPS (Docker)"
+        echo -e "   ${G}2)${N}   IDX dev.nix Setup"
+        echo -e "   ${G}3)${N}   IDX VPS Maker  ${C}(QEMU + KVM)${N}"
+        echo -e "   ${G}4)${N}   Real VPS Installer"
         echo
-        echo -e "   ${G}1)${N}  🐳 GitHub VPS (Docker)"
-        echo -e "   ${G}2)${N}  🔧 IDX Tool Setup"
-        echo -e "   ${G}3)${N}  💻 IDX VPS Maker  ${C}(QEMU + Auto-KVM)${N}"
-        echo -e "   ${G}4)${N}  🌐 Real VPS Installer"
-        echo
-        if (( vm_count > 0 )); then
-            echo -e "   ${C}5)${N}  🚀 Start a VM"
-            echo -e "   ${C}6)${N}  🛑 Stop a VM"
-            echo -e "   ${C}7)${N}  📋 VM Info"
-            echo -e "   ${C}8)${N}  ✏️  Edit VM Config"
-            echo -e "   ${C}9)${N}  🗑️  Delete a VM"
-            echo -e "   ${C}10)${N} 📈 Resize VM Disk"
-            echo -e "   ${C}11)${N} 📊 VM Performance"
-            echo -e "   ${C}12)${N} 🔧 Fix VM Issues"
+        if (( vc > 0 )); then
+            echo -e "   ${C}5)${N}   Start a VM"
+            echo -e "   ${C}6)${N}   Stop a VM"
+            echo -e "   ${C}7)${N}   VM Info"
+            echo -e "   ${C}8)${N}   Edit VM Config"
+            echo -e "   ${C}9)${N}   Delete a VM"
+            echo -e "   ${C}10)${N}  Resize VM Disk"
+            echo -e "   ${C}11)${N}  VM Performance"
+            echo -e "   ${C}12)${N}  Fix VM Issues"
             echo
         fi
-        echo -e "   ${R}0)${N}  ❌ Exit"
-        echo
-        divider "─" "$D"
-        echo
+        echo -e "   ${R}0)${N}   Exit"
+        echo; _line "-" "$DIM"; echo
  
-        print_status INPUT "Select Option: "; read -r op
+        ask "Select Option: "; read -r op
  
         case $op in
-            1) launch_github_vps ;;
-            2) setup_idx_tool ;;
-            3) main_menu_vm_manager ;;
-            4) launch_real_vps ;;
-            5) (( vm_count > 0 )) && { select_vm "Select VM to start" "${vms[@]}" && start_vm "$SELECTED_VM"; } ;;
-            6) (( vm_count > 0 )) && { select_vm "Select VM to stop"  "${vms[@]}" && stop_vm  "$SELECTED_VM"; } ;;
-            7) (( vm_count > 0 )) && { select_vm "Select VM for info" "${vms[@]}" && show_vm_info "$SELECTED_VM"; } ;;
-            8) (( vm_count > 0 )) && { select_vm "Select VM to edit"  "${vms[@]}" && edit_vm_config "$SELECTED_VM"; } ;;
-            9) (( vm_count > 0 )) && { select_vm "Select VM to delete" "${vms[@]}" && delete_vm "$SELECTED_VM"; } ;;
-            10) (( vm_count > 0 )) && { select_vm "Select VM to resize" "${vms[@]}" && resize_vm_disk "$SELECTED_VM"; } ;;
-            11) (( vm_count > 0 )) && { select_vm "Select VM for stats" "${vms[@]}" && show_vm_performance "$SELECTED_VM"; } ;;
-            12) (( vm_count > 0 )) && { select_vm "Select VM to fix"   "${vms[@]}" && fix_vm_issues "$SELECTED_VM"; } ;;
+            1) github_vps ;;
+            2) idx_setup ;;
+            3) idx_vps_menu ;;
+            4) real_vps ;;
+            5)  (( vc>0 )) && { select_vm "VM to start"  "${vms[@]}"; start_vm    "$SELECTED_VM"; } ;;
+            6)  (( vc>0 )) && { select_vm "VM to stop"   "${vms[@]}"; stop_vm     "$SELECTED_VM"; } ;;
+            7)  (( vc>0 )) && { select_vm "VM for info"  "${vms[@]}"; vm_info     "$SELECTED_VM"; } ;;
+            8)  (( vc>0 )) && { select_vm "VM to edit"   "${vms[@]}"; edit_vm     "$SELECTED_VM"; } ;;
+            9)  (( vc>0 )) && { select_vm "VM to delete" "${vms[@]}"; delete_vm   "$SELECTED_VM"; } ;;
+            10) (( vc>0 )) && { select_vm "VM to resize" "${vms[@]}"; resize_disk "$SELECTED_VM"; } ;;
+            11) (( vc>0 )) && { select_vm "VM for stats" "${vms[@]}"; vm_perf     "$SELECTED_VM"; } ;;
+            12) (( vc>0 )) && { select_vm "VM to fix"    "${vms[@]}"; fix_vm      "$SELECTED_VM"; } ;;
             0)
-                echo
-                divider "═" "$C"
-                echo -e "  ${C}${BLD}   Thanks for using PROXLEGENDYT VM Manager!${N}"
-                divider "═" "$C"
-                echo
-                sleep 1
-                exit 0
-                ;;
-            *) print_status ERROR "Invalid option '$op'." ;;
-        esac
- 
-        (( op >= 5 && op <= 12 )) || true
-        sleep 0.3
-    done
-}
- 
-# ─── IDX VM MANAGER SUB-MENU ─────────────────────────────────
-main_menu_vm_manager() {
-    while true; do
-        print_header
-        echo -e "  ${C}${BLD}💻  IDX VPS MAKER — QEMU VM Manager${N}"
-        divider "─" "$D"
-        echo
- 
-        local vms=()
-        mapfile -t vms < <(get_vm_list)
-        local vm_count=${#vms[@]}
- 
-        if (( vm_count > 0 )); then
-            echo -e "  ${Y}${BLD}Existing VMs:${N}"
-            for i in "${!vms[@]}"; do
-                local st="${D}stopped${N}"
-                is_vm_running "${vms[$i]}" && st="${G}running 🚀${N}"
-                printf "    ${C}%2d)${N}  %-20s  %b\n" $((i+1)) "${vms[$i]}" "$st"
-            done
-            echo
-        fi
- 
-        echo -e "   ${G}1)${N}  ➕ Create New VM"
-        (( vm_count > 0 )) && {
-            echo -e "   ${C}2)${N}  🚀 Start VM"
-            echo -e "   ${C}3)${N}  🛑 Stop VM"
-            echo -e "   ${C}4)${N}  📋 VM Info"
-            echo -e "   ${C}5)${N}  ✏️  Edit VM"
-            echo -e "   ${C}6)${N}  🗑️  Delete VM"
-            echo -e "   ${C}7)${N}  📈 Resize Disk"
-            echo -e "   ${C}8)${N}  📊 Performance"
-            echo -e "   ${C}9)${N}  🔧 Fix Issues"
-        }
-        echo -e "   ${R}0)${N}  ↩ Back"
-        echo
-        print_status INPUT "Choice: "; read -r c
- 
-        case $c in
-            1) create_new_vm ;;
-            2) (( vm_count > 0 )) && { select_vm "VM to start" "${vms[@]}" && start_vm "$SELECTED_VM"; } ;;
-            3) (( vm_count > 0 )) && { select_vm "VM to stop"  "${vms[@]}" && stop_vm  "$SELECTED_VM"; } ;;
-            4) (( vm_count > 0 )) && { select_vm "VM for info" "${vms[@]}" && show_vm_info "$SELECTED_VM"; } ;;
-            5) (( vm_count > 0 )) && { select_vm "VM to edit"  "${vms[@]}" && edit_vm_config "$SELECTED_VM"; } ;;
-            6) (( vm_count > 0 )) && { select_vm "VM to delete" "${vms[@]}" && delete_vm "$SELECTED_VM"; } ;;
-            7) (( vm_count > 0 )) && { select_vm "VM to resize" "${vms[@]}" && resize_vm_disk "$SELECTED_VM"; } ;;
-            8) (( vm_count > 0 )) && { select_vm "VM for stats" "${vms[@]}" && show_vm_performance "$SELECTED_VM"; } ;;
-            9) (( vm_count > 0 )) && { select_vm "VM to fix"   "${vms[@]}" && fix_vm_issues "$SELECTED_VM"; } ;;
-            0) return ;;
-            *) print_status ERROR "Invalid option." ;;
+                echo; _line "=" "$C"
+                echo -e "  ${C}${BLD}   Thanks for using PROXLEGENDYT! Goodbye!${N}"
+                _line "=" "$C"; echo; sleep 1; exit 0 ;;
+            *) err "Invalid option '$op'." ;;
         esac
     done
 }
  
-# ─── SUPPORTED OS LIST ───────────────────────────────────────
-declare -A OS_OPTIONS=(
+# ══════════════════════════════════════════════════════
+#  OS IMAGE LIST
+# ══════════════════════════════════════════════════════
+declare -A OS_LIST=(
     ["Ubuntu 22.04 (Jammy)"]="ubuntu|jammy|https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img|ubuntu22|ubuntu|ubuntu"
     ["Ubuntu 24.04 (Noble)"]="ubuntu|noble|https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img|ubuntu24|ubuntu|ubuntu"
     ["Debian 11 (Bullseye)"]="debian|bullseye|https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2|debian11|debian|debian"
@@ -1361,11 +945,16 @@ declare -A OS_OPTIONS=(
     ["CentOS Stream 9"]="centos|stream9|https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2|centos9|centos|centos"
     ["AlmaLinux 9"]="almalinux|9|https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2|almalinux9|alma|alma"
     ["Rocky Linux 9"]="rockylinux|9|https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2|rocky9|rocky|rocky"
-    ["Kali Linux (Latest)"]="kali|rolling|https://cdimage.kali.org/kali-2024.2/kali-linux-2024.2-qemu-amd64.img|kali|kali|kali"
+    ["Kali Linux (Rolling)"]="kali|rolling|https://cdimage.kali.org/kali-2024.2/kali-linux-2024.2-qemu-amd64.img|kali|kali|kali"
 )
  
-# ─── BOOTSTRAP ───────────────────────────────────────────────
+# ══════════════════════════════════════════════════════
+#  CLEANUP + BOOTSTRAP
+# ══════════════════════════════════════════════════════
+cleanup() { rm -f /tmp/plyt-user-data /tmp/plyt-meta-data 2>/dev/null; }
+trap cleanup EXIT
+ 
 set -o pipefail
 mkdir -p "$VM_DIR"
-install_deps_if_missing
+install_deps
 main_menu
