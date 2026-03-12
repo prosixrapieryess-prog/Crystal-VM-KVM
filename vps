@@ -347,13 +347,13 @@ create_new_vm() {
     done
  
     while true; do
-        read -rp "$(print_status "INPUT" "👤 Username       [default: $DEFAULT_USERNAME]: ")" USERNAME
+        read -rp "$(print_status "INPUT" "👤 Username       [default: $root]: ")" USERNAME
         USERNAME="${USERNAME:-$DEFAULT_USERNAME}"
         validate_input "username" "$USERNAME" && break
     done
  
     while true; do
-        read -rsp "$(print_status "INPUT" "🔑 Password       [default: $DEFAULT_PASSWORD]: ")" PASSWORD
+        read -rsp "$(print_status "INPUT" "🔑 Password       [default: $root]: ")" PASSWORD
         PASSWORD="${PASSWORD:-$DEFAULT_PASSWORD}"
         echo
         [[ -n "$PASSWORD" ]] && break
