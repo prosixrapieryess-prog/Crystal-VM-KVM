@@ -39,7 +39,7 @@ display_header() {
     echo '  ██║     ██║  ██║╚██████╔╝██╔╝ ██╗███████╗███████╗╚██████╔╝███████╗██║ ╚███║██████╔╝   ██║      ██║   '
     echo '  ╚═╝     ╚═╝  ╚═╝ ╚═════╝╚═╝   ╚═╝╚══════╝╚══════╝ ╚═════╝ ╚══════╝╚═╝  ╚══╝╚═════╝    ╚═╝      ╚═╝   '
     echo -e "${RESET}"
-    echo -e "  ${BG_DARK}${CYAN}${BOLD}  ⚡  Enhanced Multi-VM Manager  •  Pure QEMU Edition  •  v3.0  ${RESET}"
+    echo -e "  ${BG_DARK}${CYAN}${BOLD}  ⚡  Enhanced Multi-VM Manager  •  Pure QEMU Edition  •  v3.1  ${RESET}"
     echo -e "  ${DIM}${WHITE}  Made with ${RED}♥${RESET}${DIM}${WHITE} by ProxLegendYT  ${RESET}"
     echo
     echo -e "  ${PURPLE}$(printf '═%.0s' {1..98})${RESET}"
@@ -85,11 +85,15 @@ spinner() {
 }
  
 # ─── Check Image Lock ─────────────────────────────────────────────
+# Pass --check-only as $3 for a non-interactive, silent check (returns 0=free, 1=locked).
+# Used internally by show_vm_info to avoid blocking reads.
 check_image_lock() {
     local img_file=$1
     local vm_name=$2
+    local check_only="${3:-}"          # FIX 4: non-interactive flag
  
     if lsof "$img_file" 2>/dev/null | grep -q qemu-system; then
+        [[ "$check_only" == "--check-only" ]] && return 1   # FIX 4: bail silently
         print_status "WARN" "🔒 Image file is already in use by another QEMU process"
         local pid
         pid=$(lsof "$img_file" 2>/dev/null | awk '/qemu-system/{print $2; exit}')
@@ -119,6 +123,7 @@ check_image_lock() {
  
     local lock_file="${img_file}.lock"
     if [[ -f "$lock_file" ]]; then
+        [[ "$check_only" == "--check-only" ]] && return 1   # FIX 4: bail silently
         print_status "WARN" "🔒 Lock file found: $lock_file"
         if find "$lock_file" -mmin +5 2>/dev/null | grep -q .; then
             print_status "WARN" "⏰ Lock file is stale (older than 5 minutes)"
@@ -230,30 +235,11 @@ EOF
     print_status "SUCCESS" "💾 Config saved → $config_file"
 }
  
-# ─── Setup VM Image ───────────────────────────────────────────────
-setup_vm_image() {
-    print_status "SECTION" "Image Setup"
-    mkdir -p "$VM_DIR"
- 
-    if [[ -f "$IMG_FILE" ]]; then
-        print_status "INFO" "✅ Image already exists — skipping download"
-    else
-        print_status "INFO" "🌐 Downloading: $IMG_URL"
-        if ! wget --progress=bar:force "$IMG_URL" -O "${IMG_FILE}.tmp"; then
-            print_status "ERROR" "Download failed from $IMG_URL"
-            exit 1
-        fi
-        mv "${IMG_FILE}.tmp" "$IMG_FILE"
-        print_status "SUCCESS" "Download complete"
-    fi
- 
-    if ! qemu-img resize "$IMG_FILE" "$DISK_SIZE" 2>/dev/null; then
-        print_status "WARN" "Resize in-place failed — creating overlay image..."
-        local tmp="${IMG_FILE}.tmp"
-        qemu-img create -f qcow2 -F qcow2 -b "$IMG_FILE" "$tmp" "$DISK_SIZE" 2>/dev/null \
-            || qemu-img create -f qcow2 "$tmp" "$DISK_SIZE"
-        mv "$tmp" "$IMG_FILE"
-    fi
+# ─── Rebuild Cloud-Init Seed Only (FIX 7) ────────────────────────
+# Separated from setup_vm_image so edits only rebuild the seed,
+# not the full image (no download attempt, no disk resize).
+rebuild_seed() {
+    print_status "INFO" "🔄 Rebuilding cloud-init seed image..."
  
     local hashed_pw
     hashed_pw=$(openssl passwd -6 "$PASSWORD" | tr -d '\n')
@@ -280,10 +266,54 @@ instance-id: iid-$VM_NAME
 local-hostname: $HOSTNAME
 EOF
  
+    rm -f "$SEED_FILE"
     if ! cloud-localds "$SEED_FILE" user-data meta-data; then
         print_status "ERROR" "Failed to create cloud-init seed image"
-        exit 1
+        return 1
     fi
+    print_status "SUCCESS" "✅ Seed image rebuilt"
+}
+ 
+# ─── Setup VM Image ───────────────────────────────────────────────
+setup_vm_image() {
+    print_status "SECTION" "Image Setup"
+    mkdir -p "$VM_DIR"
+ 
+    # Download image if not present
+    if [[ -f "$IMG_FILE" ]]; then
+        print_status "INFO" "✅ Image already exists — skipping download"
+    else
+        print_status "INFO" "🌐 Downloading: $IMG_URL"
+        if ! wget --progress=bar:force "$IMG_URL" -O "${IMG_FILE}.tmp"; then
+            print_status "ERROR" "Download failed from $IMG_URL"
+            exit 1
+        fi
+        mv "${IMG_FILE}.tmp" "$IMG_FILE"
+        print_status "SUCCESS" "Download complete"
+    fi
+ 
+    # ── FIX 6: Resize safely ──────────────────────────────────────
+    # The old overlay method created a qcow2 that referenced $IMG_FILE
+    # as its backing store, then overwrote $IMG_FILE with that overlay —
+    # producing a file that references itself (circular / broken image).
+    # Instead, do an in-place resize; if that fails, convert to a new
+    # standalone image at the target size, then replace the original.
+    if ! qemu-img resize "$IMG_FILE" "$DISK_SIZE" 2>/dev/null; then
+        print_status "WARN" "In-place resize failed — converting to new image at $DISK_SIZE..."
+        local tmp="${IMG_FILE}.converting"
+        if qemu-img convert -f qcow2 -O qcow2 "$IMG_FILE" "$tmp" && \
+           qemu-img resize "$tmp" "$DISK_SIZE"; then
+            mv "$tmp" "$IMG_FILE"
+            print_status "SUCCESS" "Converted and resized successfully"
+        else
+            rm -f "$tmp"
+            print_status "ERROR" "Could not resize image — leaving original intact"
+            exit 1
+        fi
+    fi
+ 
+    # Build cloud-init seed using the shared helper
+    rebuild_seed
  
     echo
     box_top
@@ -473,7 +503,7 @@ start_vm() {
     [[ -f "$IMG_FILE" ]] || { print_status "ERROR" "VM image not found: $IMG_FILE"; return 1; }
     if [[ ! -f "$SEED_FILE" ]]; then
         print_status "WARN" "Seed file missing — recreating..."
-        setup_vm_image
+        rebuild_seed    # FIX 7: use focused helper, not full setup_vm_image
     fi
  
     echo
@@ -487,6 +517,21 @@ start_vm() {
     box_bottom
     echo
  
+    # ── FIX 3: Build a single netdev string with all hostfwd entries ──
+    # The original code added a new NIC (-device virtio-net-pci + -netdev)
+    # for every extra port forward, causing the guest OS to see multiple
+    # unexpected network interfaces.  QEMU supports multiple hostfwd=
+    # options on one netdev, which is the correct approach.
+    local netdev_str="user,id=net0,hostfwd=tcp::${SSH_PORT}-:22"
+    if [[ -n "${PORT_FORWARDS:-}" ]]; then
+        IFS=',' read -ra forwards <<< "$PORT_FORWARDS"
+        for forward in "${forwards[@]}"; do
+            forward="${forward// /}"   # strip any stray spaces
+            IFS=':' read -r host_port guest_port <<< "$forward"
+            netdev_str+=",hostfwd=tcp::${host_port}-:${guest_port}"
+        done
+    fi
+ 
     local qemu_cmd=(
         qemu-system-x86_64
         -m "$MEMORY"
@@ -497,27 +542,13 @@ start_vm() {
         -drive "file=$SEED_FILE,format=raw,if=virtio"
         -boot order=c
         -device virtio-net-pci,netdev=net0
-        -netdev "user,id=net0,hostfwd=tcp::${SSH_PORT}-:22"
+        -netdev "$netdev_str"
         -device virtio-balloon-pci
         -object "rng-random,filename=/dev/urandom,id=rng0"
         -device virtio-rng-pci,rng=rng0
         -no-hpet
         -rtc base=utc,clock=host
     )
- 
-    # Extra port forwards (fixed — unique netdev IDs)
-    if [[ -n "${PORT_FORWARDS:-}" ]]; then
-        local fwd_idx=1
-        IFS=',' read -ra forwards <<< "$PORT_FORWARDS"
-        for forward in "${forwards[@]}"; do
-            IFS=':' read -r host_port guest_port <<< "$forward"
-            qemu_cmd+=(
-                -device "virtio-net-pci,netdev=extnet${fwd_idx}"
-                -netdev "user,id=extnet${fwd_idx},hostfwd=tcp::${host_port}-:${guest_port}"
-            )
-            ((fwd_idx++))
-        done
-    fi
  
     if [[ "${GUI_MODE}" == true ]]; then
         qemu_cmd+=(-vga virtio -display gtk,gl=on)
@@ -564,8 +595,9 @@ show_vm_info() {
     local run_status
     is_vm_running "$vm_name" && run_status="${GREEN}🚀 Running${RESET}" || run_status="${DIM}💤 Stopped${RESET}"
  
+    # FIX 4: Use --check-only to avoid interactive prompts inside a status display
     local lock_status
-    check_image_lock "$IMG_FILE" "$vm_name" >/dev/null 2>&1 \
+    check_image_lock "$IMG_FILE" "$vm_name" "--check-only" \
         && lock_status="${GREEN}🔓 Unlocked${RESET}" \
         || lock_status="${YELLOW}🔒 Locked${RESET}"
  
@@ -608,7 +640,7 @@ edit_vm_config() {
         echo -e "  ${GOLD}  6)${RESET} 🌐  Port Forwards   ${DIM}(current: ${PORT_FORWARDS:-None})${RESET}"
         echo -e "  ${GOLD}  7)${RESET} 🧠  Memory          ${DIM}(current: ${MEMORY}MB)${RESET}"
         echo -e "  ${GOLD}  8)${RESET} ⚡  CPUs            ${DIM}(current: $CPUS)${RESET}"
-        echo -e "  ${GOLD}  9)${RESET} 💾  Disk Size       ${DIM}(current: $DISK_SIZE)${RESET}"
+        echo -e "  ${GOLD}  9)${RESET} 💾  Resize Disk     ${DIM}(current: $DISK_SIZE)${RESET}"
         echo -e "  ${RED}  0)${RESET} ↩️   Back\n"
  
         read -rp "$(print_status "INPUT" "Your choice: ")" edit_choice
@@ -671,19 +703,22 @@ edit_vm_config() {
                     v="${v:-$CPUS}"
                     validate_input "number" "$v" && CPUS="$v" && break
                 done ;;
+            # FIX 5: Disk resize now actually resizes the image file.
+            # Original code only updated the DISK_SIZE variable in memory
+            # and config without ever calling qemu-img resize.
             9)
-                while true; do
-                    read -rp "$(print_status "INPUT" "New disk size [current: $DISK_SIZE]: ")" v
-                    v="${v:-$DISK_SIZE}"
-                    validate_input "size" "$v" && DISK_SIZE="$v" && break
-                done ;;
+                save_vm_config          # persist any other edits first
+                resize_vm_disk "$vm_name"
+                load_vm_config "$vm_name"  # reload so DISK_SIZE reflects new size
+                continue ;;
             0) return 0 ;;
             *) print_status "ERROR" "Invalid selection"; continue ;;
         esac
  
+        # FIX 7: Only rebuild the seed (credentials/hostname changed),
+        # not the full setup_vm_image which would also attempt resize.
         if $needs_reseed; then
-            print_status "INFO" "🔄 Rebuilding cloud-init seed..."
-            setup_vm_image
+            rebuild_seed
         fi
  
         save_vm_config
@@ -787,8 +822,7 @@ fix_vm_issues() {
             rm -f "${IMG_FILE}.lock" "${IMG_FILE}"*.lock 2>/dev/null || true
             print_status "SUCCESS" "Lock files removed" ;;
         2)
-            rm -f "$SEED_FILE" 2>/dev/null || true
-            setup_vm_image
+            rebuild_seed    # FIX 7: use focused helper
             print_status "SUCCESS" "Seed image recreated" ;;
         3)
             save_vm_config
@@ -802,6 +836,27 @@ fix_vm_issues() {
         0) return 0 ;;
         *) print_status "ERROR" "Invalid selection" ;;
     esac
+}
+ 
+# ─── Pick VM Helper (FIX 1 + FIX 2) ──────────────────────────────
+# Moved OUTSIDE the main_menu while-loop so it is defined once, not
+# re-defined on every iteration.
+#
+# FIX 2: All output except the final "echo <vm-name>" is redirected
+# to stderr (>&2).  When called as  vm=$(pick_vm "..."),  only the
+# actual VM name ends up in $vm; prompts and error messages still
+# appear on the terminal via stderr.
+pick_vm() {
+    local prompt=$1
+    local num
+    # Print the prompt to stderr so it isn't captured by $()
+    read -rp "$(echo -e "${CYAN}${BOLD}  🎯 ${prompt} (1–${vm_count}): ${RESET}")" num
+    if [[ "$num" =~ ^[0-9]+$ ]] && (( num >= 1 && num <= vm_count )); then
+        echo "${vms[$((num-1))]}"          # ← only this goes to stdout / $()
+    else
+        echo -e "  ${RED}${BOLD}❌ ERROR  ${RESET}${RED}Invalid selection${RESET}" >&2
+        echo ""   # empty string signals failure to caller
+    fi
 }
  
 # ─── Main Menu ────────────────────────────────────────────────────
@@ -841,19 +896,7 @@ main_menu() {
  
         read -rp "$(print_status "INPUT" "Your choice: ")" choice
  
-        # Helper to pick VM by number
-        pick_vm() {
-            local prompt=$1
-            local num
-            read -rp "$(print_status "INPUT" "$prompt (1–$vm_count): ")" num
-            if [[ "$num" =~ ^[0-9]+$ ]] && (( num >= 1 && num <= vm_count )); then
-                echo "${vms[$((num-1))]}"
-            else
-                print_status "ERROR" "Invalid selection"
-                echo ""
-            fi
-        }
- 
+        local vm
         case $choice in
             1) create_new_vm ;;
             2)
@@ -903,7 +946,7 @@ check_dependencies
 # Supported OS list
 declare -A OS_OPTIONS=(
     ["Ubuntu 22.04 LTS"]="ubuntu|jammy|https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img|ubuntu22|ubuntu|ubuntu"
-    ["Ubuntu 24.04 LTS"]="ubuntu|noble|https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img|ubuntu24|ubuntu|ubuntu
+    ["Ubuntu 24.04 LTS"]="ubuntu|noble|https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img|ubuntu24|ubuntu|ubuntu"
     ["Debian 11 Bullseye"]="debian|bullseye|https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2|debian11|debian|debian"
     ["Debian 12 Bookworm"]="debian|bookworm|https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2|debian12|debian|debian"
     ["Debian 13 Trixie"]="debian|trixie|https://cloud.debian.org/images/cloud/trixie/daily/latest/debian-13-generic-amd64-daily.qcow2|debian13|debian|debian"
