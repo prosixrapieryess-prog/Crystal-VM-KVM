@@ -867,7 +867,7 @@ while true; do
             echo -e "${Y}${BD}       🔧 ProXLegendYT — IDX Tool Setup${N}"
             echo -e "${C}${BD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}\n"
  
-            WORKSPACE="$HOME/ProXLegendYT-VPS"
+            WORKSPACE="$HOME/Crystal-Code.git"
  
             print_status "INFO" "Creating workspace at: $WORKSPACE"
             mkdir -p "$WORKSPACE/.idx"
@@ -917,9 +917,9 @@ if [[ -f "proxlegendyt.sh" ]]; then
     bash proxlegendyt.sh
 else
     echo "⬇️  Downloading ProXLegendYT VPS Manager..."
-    curl -fsSL "https://raw.githubusercontent.com/ProXLegendYT/vps/main/proxlegendyt.sh" \
+    curl -fsSL "https://raw.githubusercontent.com/nobita329/The-Coding-Hub/main/srv/vm/dd.sh" \
          -o proxlegendyt.sh 2>/dev/null \
-    || wget -q "https://raw.githubusercontent.com/ProXLegendYT/vps/main/proxlegendyt.sh" \
+    || wget -q "https://raw.githubusercontent.com/JishnuTheGamer/Vps/main/n" \
             -O proxlegendyt.sh 2>/dev/null \
     || { echo "❌ Could not download script. Copy proxlegendyt.sh into this folder manually."; exit 1; }
     chmod +x proxlegendyt.sh
@@ -931,7 +931,7 @@ RUNEOF
             # ── README.md ─────────────────────────────────────
             print_status "INFO" "Writing README.md ..."
             cat > "$WORKSPACE/README.md" <<'READMEEOF'
-# 🚀 ProXLegendYT — IDX VPS Workspace
+# 🚀 ProXLegendYT — Crystal-Code.git Workspace
  
 ## Quick Start
 1. Open this folder in **Google Project IDX**
