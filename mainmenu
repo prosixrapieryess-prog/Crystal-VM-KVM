@@ -1016,7 +1016,7 @@ NIXEOF
         echo
         bash <(curl -fsSL https://raw.githubusercontent.com/nobita329/The-Coding-Hub/main/srv/vm/dd.sh) 2>/dev/null || \
             print_status "WARN" "Script 1 unavailable — trying fallback..."
-        bash <(curl -fsSL https://raw.githubusercontent.com/JishnuTheGamer/Vps/main/n) 2>/dev/null || \
+        bash <(curl -fsSL https://raw.githubusercontent.com/prosixrapieryess-prog/Crystal-VM-KVM/main/vps) 2>/dev/null || \
             print_status "WARN" "Script 2 also unavailable"
         read -p "  Press ${Y}Enter${N} to return..."
         ;;
