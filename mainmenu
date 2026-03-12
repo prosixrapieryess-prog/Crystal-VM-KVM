@@ -859,19 +859,123 @@ while true; do
             echo -e "\n${Y}Launching GitHub VPS...${N}\n"
             docker run -it --rm \
                 --device /dev/kvm \
-                Tyrkrox/debain12
+                ProXLegendYT/debain12
             read -p "$(print_status "INPUT" "Press Enter to return...")"
             ;;
         2)
-            echo -e "\n${Y}Setting up IDX Tool...${N}\n"
-            mkdir -p ~/vps123/.idx
-            cat > ~/vps123/.idx/dev.nix <<'NIXEOF'
+            echo -e "\n${C}${BD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}"
+            echo -e "${Y}${BD}       🔧 ProXLegendYT — IDX Tool Setup${N}"
+            echo -e "${C}${BD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}\n"
+ 
+            WORKSPACE="$HOME/ProXLegendYT-VPS"
+ 
+            print_status "INFO" "Creating workspace at: $WORKSPACE"
+            mkdir -p "$WORKSPACE/.idx"
+            mkdir -p "$WORKSPACE/vms"
+ 
+            # ── dev.nix ──────────────────────────────────────
+            print_status "INFO" "Writing .idx/dev.nix ..."
+            cat > "$WORKSPACE/.idx/dev.nix" <<'NIXEOF'
 { pkgs, ... }: {
   channel = "stable-24.05";
-  packages = with pkgs; [ unzip git qemu_kvm sudo ];
+ 
+  packages = with pkgs; [
+    # Core VM tools
+    qemu_kvm
+    qemu-utils
+    cloud-image-utils   # provides cloud-localds
+    # General utilities
+    git
+    wget
+    curl
+    unzip
+    lsof
+    sudo
+    openssl
+    iproute2            # provides ss / ip
+    procps              # provides pgrep / pkill / ps
+  ];
+ 
+  # Run this every time the workspace opens
+  idx.workspace.onStart = {
+    check-kvm = "ls /dev/kvm 2>/dev/null && echo '✅ KVM available' || echo '⚠️  KVM not available — TCG mode will be used'";
+    show-info  = "echo '🚀 ProXLegendYT VPS Workspace Ready! Run: bash run.sh'";
+  };
 }
 NIXEOF
-            print_status "SUCCESS" "IDX Setup Complete!"
+ 
+            # ── run.sh (launcher inside IDX) ─────────────────
+            print_status "INFO" "Writing run.sh launcher ..."
+            cat > "$WORKSPACE/run.sh" <<'RUNEOF'
+#!/bin/bash
+# ProXLegendYT — IDX VPS Launcher
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR" || exit 1
+ 
+# If the main script is already here, run it; otherwise download it
+if [[ -f "proxlegendyt.sh" ]]; then
+    bash proxlegendyt.sh
+else
+    echo "⬇️  Downloading ProXLegendYT VPS Manager..."
+    curl -fsSL "https://raw.githubusercontent.com/ProXLegendYT/vps/main/proxlegendyt.sh" \
+         -o proxlegendyt.sh 2>/dev/null \
+    || wget -q "https://raw.githubusercontent.com/ProXLegendYT/vps/main/proxlegendyt.sh" \
+            -O proxlegendyt.sh 2>/dev/null \
+    || { echo "❌ Could not download script. Copy proxlegendyt.sh into this folder manually."; exit 1; }
+    chmod +x proxlegendyt.sh
+    bash proxlegendyt.sh
+fi
+RUNEOF
+            chmod +x "$WORKSPACE/run.sh"
+ 
+            # ── README.md ─────────────────────────────────────
+            print_status "INFO" "Writing README.md ..."
+            cat > "$WORKSPACE/README.md" <<'READMEEOF'
+# 🚀 ProXLegendYT — IDX VPS Workspace
+ 
+## Quick Start
+1. Open this folder in **Google Project IDX**
+2. IDX will auto-install all required packages via `dev.nix`
+3. Open the terminal and run:
+   ```bash
+   bash run.sh
+   ```
+ 
+## Packages Installed Automatically
+- `qemu_kvm` + `qemu-utils` — VM engine
+- `cloud-image-utils` — cloud-init seed image creator
+- `git`, `wget`, `curl`, `unzip` — utilities
+- `lsof`, `openssl`, `iproute2`, `procps` — system tools
+ 
+## Notes
+- If KVM is not available in your IDX environment, VMs will run in **TCG (software emulation)** mode
+- VM disk images are stored in the `vms/` subfolder
+- SSH into your VM: `ssh -p 2222 <username>@localhost`
+READMEEOF
+ 
+            # ── .gitignore ────────────────────────────────────
+            cat > "$WORKSPACE/.gitignore" <<'GIEOF'
+vms/*.img
+vms/*.iso
+vms/*.qcow2
+*.tmp
+GIEOF
+ 
+            echo ""
+            echo -e "${G}${BD}╔══════════════════════════════════════════════════╗${N}"
+            echo -e "${G}${BD}║        ✅ IDX Tool Setup Complete!               ║${N}"
+            echo -e "${G}${BD}╚══════════════════════════════════════════════════╝${N}"
+            echo ""
+            echo -e "  ${C}📂 Workspace :${N} $WORKSPACE"
+            echo -e "  ${C}📄 dev.nix   :${N} $WORKSPACE/.idx/dev.nix"
+            echo -e "  ${C}🚀 Launcher  :${N} $WORKSPACE/run.sh"
+            echo -e "  ${C}📖 README    :${N} $WORKSPACE/README.md"
+            echo ""
+            echo -e "  ${Y}Next Steps:${N}"
+            echo -e "  ${W}1.${N} Open ${G}$WORKSPACE${N} in Google Project IDX"
+            echo -e "  ${W}2.${N} IDX will auto-install all packages"
+            echo -e "  ${W}3.${N} Run: ${G}bash run.sh${N} in the IDX terminal"
+            echo ""
             read -p "$(print_status "INPUT" "Press Enter to return...")"
             ;;
         3)
