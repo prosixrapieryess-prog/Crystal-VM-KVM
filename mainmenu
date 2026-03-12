@@ -100,63 +100,160 @@ kvm_status_msg() {
 }
  
 # ─── AUTO-INSTALL DEPENDENCIES ───────────────────────────────
+# Detects: apt-get · apt · pkg (Termux) · apk (Alpine) · pacman (Arch)
+#          zypper (openSUSE) · dnf (Fedora/RHEL) · yum (old RHEL)
 install_deps_if_missing() {
-    local pkgs_apt=()
-    local needs_install=false
- 
-    # Map: command → package name
-    declare -A CMD_PKG=(
-        ["qemu-system-x86_64"]="qemu-system-x86"
-        ["qemu-img"]="qemu-utils"
-        ["cloud-localds"]="cloud-image-utils"
-        ["wget"]="wget"
-        ["lsof"]="lsof"
-        ["openssl"]="openssl"
+    # ── command → [apt pkg] [apk pkg] [pacman pkg] [dnf pkg] [pkg/Termux pkg]
+    # Format: "apt_name|apk_name|pacman_name|dnf_name|termux_name"
+    declare -A CMD_MAP=(
+        ["qemu-system-x86_64"]="qemu-system-x86|qemu-system-x86_64|qemu-full|qemu-system-x86|qemu-system-x86_64"
+        ["qemu-img"]="qemu-utils|qemu-img|qemu-img|qemu-img|qemu-utils"
+        ["cloud-localds"]="cloud-image-utils|cloud-utils|cloud-utils|cloud-utils|cloud-utils"
+        ["wget"]="wget|wget|wget|wget|wget"
+        ["lsof"]="lsof|lsof|lsof|lsof|lsof"
+        ["openssl"]="openssl|openssl|openssl|openssl|openssl"
     )
  
-    for cmd in "${!CMD_PKG[@]}"; do
-        if ! command -v "$cmd" &>/dev/null; then
-            pkgs_apt+=("${CMD_PKG[$cmd]}")
-            needs_install=true
-        fi
+    local missing_cmds=()
+    for cmd in "${!CMD_MAP[@]}"; do
+        command -v "$cmd" &>/dev/null || missing_cmds+=("$cmd")
     done
  
-    if $needs_install; then
-        # Deduplicate
-        local unique_pkgs=($(printf '%s\n' "${pkgs_apt[@]}" | sort -u))
-        print_status WARN "Missing dependencies detected."
-        print_status STEP "Installing: ${unique_pkgs[*]}"
-        echo
+    [[ ${#missing_cmds[@]} -eq 0 ]] && return 0
  
-        if command -v apt-get &>/dev/null; then
-            sudo apt-get update -qq 2>/dev/null
-            sudo apt-get install -y "${unique_pkgs[@]}" 2>&1 | grep -E "(Installing|Unpacking|Setting up|Error)" || true
-        elif command -v dnf &>/dev/null; then
-            sudo dnf install -y qemu-system-x86_64 qemu-img cloud-utils wget lsof openssl 2>&1 | tail -5
-        elif command -v yum &>/dev/null; then
-            sudo yum install -y qemu-kvm qemu-img cloud-utils wget lsof openssl 2>&1 | tail -5
-        else
-            print_status ERROR "No supported package manager found. Please install manually:"
-            print_status INFO  "  sudo apt install qemu-system-x86 qemu-utils cloud-image-utils wget lsof openssl"
-            exit 1
-        fi
+    print_status WARN "Missing tools detected: ${missing_cmds[*]}"
+    echo
  
-        echo
-        # Re-verify
-        local still_missing=()
-        for cmd in "${!CMD_PKG[@]}"; do
-            command -v "$cmd" &>/dev/null || still_missing+=("$cmd")
-        done
+    # ── Detect which package manager is available ──────────────
+    local PM="" UPDATE_CMD="" INSTALL_CMD="" SUDO="sudo"
  
-        if [[ ${#still_missing[@]} -gt 0 ]]; then
-            print_status ERROR "Still missing after install: ${still_missing[*]}"
-            print_status INFO  "Try manually: sudo apt install qemu-system-x86 qemu-utils cloud-image-utils lsof openssl wget"
-            exit 1
-        fi
+    # In Termux there's no sudo
+    command -v sudo &>/dev/null || SUDO=""
  
-        print_status SUCCESS "All dependencies installed successfully!"
-        sleep 1
+    if   command -v apt-get &>/dev/null; then PM="apt-get"
+    elif command -v apt     &>/dev/null; then PM="apt"
+    elif command -v pkg     &>/dev/null && pkg help &>/dev/null 2>&1; then PM="termux-pkg"
+    elif command -v apk     &>/dev/null; then PM="apk"
+    elif command -v pacman  &>/dev/null; then PM="pacman"
+    elif command -v zypper  &>/dev/null; then PM="zypper"
+    elif command -v dnf     &>/dev/null; then PM="dnf"
+    elif command -v yum     &>/dev/null; then PM="yum"
+    else
+        PM="none"
     fi
+ 
+    print_status INFO "Package manager detected: ${PM:-none}"
+    echo
+ 
+    # ── Build the package list for the detected PM ─────────────
+    local pkgs=()
+    for cmd in "${missing_cmds[@]}"; do
+        local entry="${CMD_MAP[$cmd]}"
+        IFS='|' read -r p_apt p_apk p_pac p_dnf p_termux <<< "$entry"
+        case $PM in
+            apt-get|apt)  pkgs+=("$p_apt")    ;;
+            termux-pkg)   pkgs+=("$p_termux")  ;;
+            apk)          pkgs+=("$p_apk")     ;;
+            pacman)       pkgs+=("$p_pac")     ;;
+            zypper|dnf|yum) pkgs+=("$p_dnf")  ;;
+        esac
+    done
+ 
+    # Deduplicate
+    IFS=$'\n' pkgs=($(printf '%s\n' "${pkgs[@]}" | sort -u)); unset IFS
+ 
+    print_status STEP "Installing packages: ${pkgs[*]}"
+    echo
+ 
+    local install_ok=false
+    case $PM in
+        apt-get)
+            $SUDO apt-get update -qq 2>/dev/null
+            $SUDO apt-get install -y "${pkgs[@]}" 2>&1 \
+                | grep -E "(Setting up|Unpacking|ERROR|error)" || true
+            install_ok=true
+            ;;
+        apt)
+            $SUDO apt update -qq 2>/dev/null
+            $SUDO apt install -y "${pkgs[@]}" 2>&1 \
+                | grep -E "(Setting up|Unpacking|ERROR|error)" || true
+            install_ok=true
+            ;;
+        termux-pkg)
+            pkg update -y 2>/dev/null
+            pkg install -y "${pkgs[@]}" 2>&1 | tail -10
+            install_ok=true
+            ;;
+        apk)
+            $SUDO apk update 2>/dev/null
+            $SUDO apk add --no-cache "${pkgs[@]}" 2>&1 | tail -10
+            install_ok=true
+            ;;
+        pacman)
+            $SUDO pacman -Sy --noconfirm "${pkgs[@]}" 2>&1 | tail -10
+            install_ok=true
+            ;;
+        zypper)
+            $SUDO zypper --non-interactive install "${pkgs[@]}" 2>&1 | tail -10
+            install_ok=true
+            ;;
+        dnf)
+            $SUDO dnf install -y "${pkgs[@]}" 2>&1 | tail -10
+            install_ok=true
+            ;;
+        yum)
+            $SUDO yum install -y "${pkgs[@]}" 2>&1 | tail -10
+            install_ok=true
+            ;;
+        none)
+            install_ok=false
+            ;;
+    esac
+ 
+    echo
+ 
+    # ── Re-verify ─────────────────────────────────────────────
+    local still_missing=()
+    for cmd in "${missing_cmds[@]}"; do
+        command -v "$cmd" &>/dev/null || still_missing+=("$cmd")
+    done
+ 
+    if [[ ${#still_missing[@]} -eq 0 ]]; then
+        print_status SUCCESS "All dependencies installed and verified!"
+        log "Dependencies installed via $PM"
+        sleep 1
+        return 0
+    fi
+ 
+    # ── Could not install — show targeted manual instructions ──
+    echo
+    divider "═" "$R"
+    echo -e "  ${R}${BLD}  MANUAL INSTALL REQUIRED${N}"
+    divider "─" "$D"
+    echo -e "  ${W}Still missing:${N} ${R}${still_missing[*]}${N}"
+    echo
+    echo -e "  ${Y}Pick the command for your system:${N}"
+    echo
+    echo -e "  ${C}Debian/Ubuntu/IDX:${N}"
+    echo -e "    sudo apt-get update && sudo apt-get install -y \\"
+    echo -e "      qemu-system-x86 qemu-utils cloud-image-utils wget lsof openssl"
+    echo
+    echo -e "  ${C}Termux (Android):${N}"
+    echo -e "    pkg update && pkg install -y qemu-system-x86_64 qemu-utils wget lsof openssl"
+    echo
+    echo -e "  ${C}Alpine Linux:${N}"
+    echo -e "    apk add qemu-system-x86_64 qemu-img cloud-utils wget lsof openssl"
+    echo
+    echo -e "  ${C}Arch Linux:${N}"
+    echo -e "    sudo pacman -Sy qemu-full wget lsof openssl"
+    echo
+    echo -e "  ${C}Fedora / RHEL / CentOS:${N}"
+    echo -e "    sudo dnf install -y qemu-system-x86_64 qemu-img cloud-utils wget lsof openssl"
+    echo
+    divider "═" "$R"
+    echo
+    print_status INPUT "Press Enter to exit and install manually..."; read -r
+    exit 1
 }
  
 # ─── VALIDATE INPUT ──────────────────────────────────────────
