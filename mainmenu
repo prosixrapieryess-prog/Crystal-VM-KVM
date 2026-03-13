@@ -337,7 +337,7 @@ start_vm() {
         -device virtio-balloon-pci
         -object rng-random,filename=/dev/urandom,id=rng0
         -device virtio-rng-pci,rng=rng0
-        -no-hpet -rtc base=utc,clock=host
+        -rtc base=utc,clock=host
     )
     if [[ -n "${PORT_FORWARDS:-}" ]]; then
         local netid=1
@@ -689,7 +689,7 @@ kvm_display_header() {
     clear; echo; kvm_gradient_line 98; echo
     echo -e "${KBOLD}"
     local L1="${KR}  ██████╗ "     L2="${KR}  ██╔══██╗"   L3="${KR}  ██████╔╝"
-    local L4="${KR}  ██╔══██╗"     L5="${KR}  ██║  ██║"   L6="${KR}  ╚═╝  ╚═╝"
+    local L4="${KR}  ██╔═══╝ "     L5="${KR}  ██║     "   L6="${KR}  ╚═╝     "
     L1+="${KORANGE}██████╗  ";     L2+="${KORANGE}██╔══██╗ ";  L3+="${KORANGE}██████╔╝ "
     L4+="${KORANGE}██╔══██╗ ";     L5+="${KORANGE}██║  ██║ ";  L6+="${KORANGE}╚═╝  ╚═╝ "
     L1+="${KGOLD} ██████╗  ";     L2+="${KGOLD} ██╔══██╗ ";  L3+="${KGOLD} ██║  ██║ "
@@ -1019,7 +1019,7 @@ kvm_start_vm() {
         -device virtio-balloon-pci
         -object "rng-random,filename=/dev/urandom,id=rng0"
         -device virtio-rng-pci,rng=rng0
-        -no-hpet -rtc base=utc,clock=host
+        -rtc base=utc,clock=host
     )
     if [[ "${GUI_MODE}" == true ]]; then
         qemu_cmd+=(-vga virtio -display gtk,gl=on)
